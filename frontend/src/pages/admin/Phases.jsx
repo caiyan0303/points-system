@@ -15,12 +15,12 @@ const STATUS_COLORS = {
   "已归档": 'bg-gray-100 text-gray-400'
 }
 
-export default function AdminPhases() {
+export default function AdminPhases({ embedded = false, initialProjectId = '' }) {
   const [phases, setPhases] = useState([])
   const [years, setYears] = useState([])
   const [projects, setProjects] = useState([])
   const [yearId, setYearId] = useState('')
-  const [projectId, setProjectId] = useState('')
+  const [projectId, setProjectId] = useState(initialProjectId ? String(initialProjectId) : '')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [toast, setToast] = useState(null)
@@ -37,21 +37,36 @@ export default function AdminPhases() {
 
   const showToast = (msg, type = 'success') => { setToast({ msg, type }); setTimeout(() => setToast(null), 3000) }
 
-  const fetchPhases = () => {
+  const fetchPhases = (projectOverride = null) => {
     setLoading(true)
     const params = {}
     if (yearId) params.year_id = yearId
-    if (projectId) params.project_id = projectId
+    const selectedProjectId = projectOverride === null ? projectId : projectOverride
+    if (selectedProjectId) params.project_id = selectedProjectId
     api.get('/api/admin/phases', { params })
       .then(({ data }) => { setPhases(data.items || data); setLoading(false) })
       .catch((err) => { setError(err.response?.data?.detail || '加载失败'); setLoading(false) })
   }
 
   useEffect(() => {
-    fetchPhases()
+    fetchPhases(initialProjectId ? String(initialProjectId) : '')
     api.get('/api/common/years').then(({ data }) => setYears(data.items || data))
     api.get('/api/common/projects').then(({ data }) => setProjects(data.items || data))
-  }, [])
+  }, [initialProjectId])
+
+  useEffect(() => {
+    setProjectId(initialProjectId ? String(initialProjectId) : '')
+  }, [initialProjectId])
+
+  const openCreateModal = () => {
+    const selectedProject = projects.find(project => String(project.id) === String(projectId))
+    setCreateForm(current => ({
+      ...current,
+      project_id: projectId || '',
+      year_id: selectedProject?.year_id ? String(selectedProject.year_id) : current.year_id,
+    }))
+    setCreateModal(true)
+  }
 
   const handleCreate = async () => {
     try {
@@ -108,8 +123,8 @@ export default function AdminPhases() {
     } catch (err) { showToast(err.response?.data?.detail || '操作失败', 'error') }
   }
 
-  return (
-    <AppLayout>
+  const content = (
+    <>
       <Toast message={toast?.msg} type={toast?.type} onClose={() => setToast(null)} />
 
       {viewPhase ? (
@@ -336,7 +351,7 @@ export default function AdminPhases() {
               <h1 className="text-2xl font-bold text-gray-900">阶段管理</h1>
               <p className="text-gray-500 mt-1">管理培训阶段</p>
             </div>
-            <button onClick={() => setCreateModal(true)} className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700">
+            <button onClick={openCreateModal} className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700">
               <Plus className="w-4 h-4" /> 创建阶段
             </button>
           </div>
@@ -352,7 +367,7 @@ export default function AdminPhases() {
                 <option value="">所有项目</option>
                 {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
               </select>
-              <button onClick={fetchPhases} className="px-4 py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700">筛选</button>
+              <button onClick={() => fetchPhases()} className="px-4 py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700">筛选</button>
             </div>
           </div>
 
@@ -578,8 +593,10 @@ export default function AdminPhases() {
           </div>
         </div>
       )}
-    </AppLayout>
+    </>
   )
+
+  return embedded ? content : <AppLayout>{content}</AppLayout>
 }
 
 function Trash2Icon(props) {

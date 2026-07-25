@@ -70,7 +70,7 @@ class ProductStatus(str, enum.Enum):
     AVAILABLE = "可兑换"
     LOW_STOCK = "即将售罄"
     SOLD_OUT = "已售罄"
-    OFF_SHELF = "暂时���架"
+    OFF_SHELF = "暂时下架"
     REPLENISH = "补货中"
 
 

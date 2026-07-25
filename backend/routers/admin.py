@@ -2,8 +2,10 @@
 import math
 from typing import List, Optional
 from datetime import datetime, timezone, timedelta
+from pathlib import Path
+from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Body
+from fastapi import APIRouter, Depends, HTTPException, Query, Body, File, UploadFile
 from sqlalchemy.orm import Session
 from sqlalchemy import func, or_
 
@@ -1807,6 +1809,35 @@ def list_products(
     return [ProductOut.model_validate(p) for p in products]
 
 
+@router.post("/products/upload-image")
+async def upload_product_image(
+    file: UploadFile = File(...),
+    current_user: User = Depends(require_admin),
+):
+    """保存商品图片并返回可直接用于商品数据的站内地址。"""
+    allowed_types = {
+        "image/jpeg": ".jpg",
+        "image/png": ".png",
+        "image/webp": ".webp",
+        "image/gif": ".gif",
+    }
+    extension = allowed_types.get(file.content_type or "")
+    if not extension:
+        raise HTTPException(status_code=400, detail="仅支持 JPG、PNG、WebP 或 GIF 图片")
+
+    contents = await file.read()
+    if not contents:
+        raise HTTPException(status_code=400, detail="图片文件为空")
+    if len(contents) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="图片不能超过 5MB")
+
+    upload_dir = Path(__file__).resolve().parent.parent / "uploads" / "products"
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    filename = f"{uuid4().hex}{extension}"
+    (upload_dir / filename).write_bytes(contents)
+    return {"image_url": f"/api/uploads/products/{filename}"}
+
+
 @router.post("/products", response_model=ProductOut)
 def create_product(
     data: ProductCreate,
@@ -1848,6 +1879,12 @@ def update_product(
         raise HTTPException(status_code=404, detail="商品不存在")
 
     updates = data.model_dump(exclude_unset=True)
+    if "product_status" in updates:
+        valid_statuses = {status.value for status in ProductStatus}
+        if updates["product_status"] not in valid_statuses:
+            raise HTTPException(status_code=400, detail="无效的商品状态")
+        if updates["product_status"] == ProductStatus.AVAILABLE.value and product.available_stock <= 0:
+            raise HTTPException(status_code=400, detail="库存不足，无法上架")
     for key, val in updates.items():
         setattr(product, key, val)
 
@@ -2135,7 +2172,7 @@ def on_site_reward(
     return {"message": "现场奖励发放成功"}
 
 
-# ═══════════════ Yearly Overview ═══════════════
+# ═══════════════ Yearly Data Summary ═══════════════
 
 @router.get("/yearly/overview")
 def yearly_overview(
@@ -2144,31 +2181,88 @@ def yearly_overview(
 ):
     years = db.query(AcademicYear).order_by(AcademicYear.id.desc()).all()
     result = []
-    for y in years:
-        projects = db.query(TrainingProject).filter(TrainingProject.year_id == y.id).all()
-        year_total_students = 0
-        year_total_points = 0
-        for p in projects:
-            student_count = db.query(func.count(User.id)).filter(
-                User.role == UserRole.STUDENT.value,
-                User.project_id == p.id,
-            ).scalar() or 0
-            year_total_students += student_count
-            pts = db.query(func.coalesce(func.sum(Point.points), 0)).filter(
-                Point.project_id == p.id, Point.status == PointStatus.ACTIVE.value,
-            ).scalar() or 0
-            year_total_points += pts
+    for year in years:
+        all_projects = db.query(TrainingProject).filter(TrainingProject.year_id == year.id).all()
+        archived_projects = [project for project in all_projects if project.status == ProjectStatus.ARCHIVED.value]
+        if not archived_projects:
+            continue
 
-        groups = db.query(func.count(Group.id)).filter(Group.year_id == y.id).scalar() or 0
-        phases = db.query(func.count(Phase.id)).filter(Phase.year_id == y.id).scalar() or 0
+        project_ids = [project.id for project in archived_projects]
+        points = db.query(Point).filter(
+            Point.project_id.in_(project_ids),
+            Point.status == PointStatus.ACTIVE.value,
+        ).all()
+        earned_points = sum(point.points for point in points if point.points > 0)
+        deducted_points = abs(sum(point.points for point in points if point.points < 0))
+
+        student_count = db.query(func.count(func.distinct(User.id))).filter(
+            User.role == UserRole.STUDENT.value,
+            User.project_id.in_(project_ids),
+        ).scalar() or 0
+        group_count = db.query(func.count(Group.id)).filter(Group.project_id.in_(project_ids)).scalar() or 0
+        phase_count = db.query(func.count(Phase.id)).filter(Phase.project_id.in_(project_ids)).scalar() or 0
+
+        redemptions = db.query(Redemption).join(User, Redemption.student_id == User.id).filter(
+            User.project_id.in_(project_ids),
+            Redemption.status.notin_([RedemptionStatus.REJECTED.value, RedemptionStatus.CANCELLED.value]),
+        ).all()
+        award_count = db.query(func.count(PrizeAward.id)).join(
+            User, PrizeAward.student_id == User.id
+        ).filter(User.project_id.in_(project_ids)).scalar() or 0
+
+        category_rows = db.query(
+            Point.category,
+            func.coalesce(func.sum(Point.points), 0),
+            func.count(Point.id),
+        ).filter(
+            Point.project_id.in_(project_ids),
+            Point.status == PointStatus.ACTIVE.value,
+            Point.points > 0,
+        ).group_by(Point.category).order_by(func.sum(Point.points).desc()).all()
+
+        project_summaries = []
+        for project in archived_projects:
+            project_points = [point for point in points if point.project_id == project.id]
+            project_summaries.append({
+                "id": project.id,
+                "name": project.name,
+                "student_count": db.query(func.count(User.id)).filter(
+                    User.role == UserRole.STUDENT.value,
+                    User.project_id == project.id,
+                ).scalar() or 0,
+                "group_count": db.query(func.count(Group.id)).filter(Group.project_id == project.id).scalar() or 0,
+                "phase_count": db.query(func.count(Phase.id)).filter(Phase.project_id == project.id).scalar() or 0,
+                "earned_points": sum(point.points for point in project_points if point.points > 0),
+                "net_points": sum(point.points for point in project_points),
+                "point_records": len(project_points),
+            })
 
         result.append({
-            "year_id": y.id, "year_name": y.name, "status": y.status,
-            "project_count": len(projects), "student_count": year_total_students,
-            "group_count": groups, "phase_count": phases,
-            "total_points": year_total_points,
+            "year_id": year.id,
+            "year_name": year.name,
+            "status": year.status,
+            "project_count": len(archived_projects),
+            "total_project_count": len(all_projects),
+            "student_count": student_count,
+            "group_count": group_count,
+            "phase_count": phase_count,
+            "earned_points": earned_points,
+            "deducted_points": deducted_points,
+            "net_points": sum(point.points for point in points),
+            "point_records": len(points),
+            "redemption_count": len(redemptions),
+            "redeemed_points": sum(item.points_spent for item in redemptions),
+            "award_count": award_count,
+            "categories": [
+                {"category": category or "未分类", "points": value or 0, "records": count or 0}
+                for category, value, count in category_rows
+            ],
+            "projects": project_summaries,
         })
-    return {"years": result}
+    return {
+        "years": result,
+        "scope_note": "仅统计已归档项目，进行中项目不会进入年度汇总",
+    }
 
 
 @router.post("/yearly/archive")

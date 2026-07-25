@@ -5,6 +5,7 @@ __pycache__/
 *.db
 *.db-journal
 backend/points_system.db
+backend/uploads/
 
 # Node
 frontend/node_modules/

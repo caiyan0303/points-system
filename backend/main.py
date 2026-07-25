@@ -29,6 +29,9 @@ app.include_router(admin.router)
 app.include_router(student.router)
 
 FRONTEND_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "frontend", "dist")
+UPLOADS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads")
+os.makedirs(UPLOADS_DIR, exist_ok=True)
+app.mount("/api/uploads", StaticFiles(directory=UPLOADS_DIR), name="uploads")
 
 
 @app.get("/api")

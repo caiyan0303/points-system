@@ -49,7 +49,7 @@ export default function AdminDashboard() {
   const quickActions = [
     { label: '新增学员', icon: Users, path: '/admin/students', color: 'bg-indigo-100 text-indigo-600 hover:bg-indigo-200' },
     { label: '录入积分', icon: PlusCircle, path: '/admin/points', color: 'bg-green-100 text-green-600 hover:bg-green-200' },
-    { label: '创建阶段', icon: Layers, path: '/admin/phases', color: 'bg-orange-100 text-orange-600 hover:bg-orange-200' },
+    { label: '创建阶段', icon: Layers, path: '/admin/projects?tab=phases', color: 'bg-orange-100 text-orange-600 hover:bg-orange-200' },
     { label: '现场发放', icon: Gift, path: '/admin/on-site', color: 'bg-pink-100 text-pink-600 hover:bg-pink-200' },
     { label: '新增商品', icon: ShoppingBag, path: '/admin/products', color: 'bg-purple-100 text-purple-600 hover:bg-purple-200' },
   ]
@@ -104,7 +104,7 @@ export default function AdminDashboard() {
             <h2 className="font-semibold text-gray-900 flex items-center gap-2">
               <Layers className="w-4 h-4" /> 阶段概览
             </h2>
-            <button onClick={() => navigate('/admin/phases')} className="text-sm text-indigo-600 hover:text-indigo-700">
+            <button onClick={() => navigate('/admin/projects?tab=phases')} className="text-sm text-indigo-600 hover:text-indigo-700">
               管理阶段 &rarr;
             </button>
           </div>
@@ -164,7 +164,7 @@ export default function AdminDashboard() {
             <h2 className="font-semibold text-gray-900 flex items-center gap-2">
               <TrendingUp className="w-4 h-4" /> 积分排名预览
             </h2>
-            <button onClick={() => navigate('/admin/phases')} className="text-sm text-indigo-600 hover:text-indigo-700">
+            <button onClick={() => navigate('/admin/projects?tab=phases')} className="text-sm text-indigo-600 hover:text-indigo-700">
               查看排名 &rarr;
             </button>
           </div>
