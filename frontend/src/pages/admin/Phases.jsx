@@ -4,7 +4,7 @@ import AppLayout from '../../components/AppLayout'
 import Toast from '../../components/Toast'
 import {
   Plus, X, Layers, Users, TrendingUp, Calendar, Clock, CheckCircle,
-  Archive, Lock, ArrowLeft, Award, Trophy, Star, Edit, Trash2
+  Archive, ArrowLeft, Award, Trophy, Star, Edit, Trash2
 } from 'lucide-react'
 
 const STATUS_LABELS = { '待开放': '待开放', '进行中': '进行中', '已关闭': '已关闭', '已归档': '已归档' }
@@ -32,7 +32,6 @@ export default function AdminPhases({ embedded = false, initialProjectId = '' })
   const [editForm, setEditForm] = useState(null)
   const [excellentModal, setExcellentModal] = useState(false)
   const [selectedExcellent, setSelectedExcellent] = useState([])
-  const [closeConfirm, setCloseConfirm] = useState(null)
   const [archiveConfirm, setArchiveConfirm] = useState(null)
 
   const showToast = (msg, type = 'success') => { setToast({ msg, type }); setTimeout(() => setToast(null), 3000) }
@@ -96,15 +95,6 @@ export default function AdminPhases({ embedded = false, initialProjectId = '' })
     } catch (err) { showToast(err.response?.data?.detail || '操作失败', 'error') }
   }
 
-  const handleClose = async () => {
-    try {
-      await api.put(`/api/admin/phases/${closeConfirm.id}/close`)
-      showToast('阶段已关闭')
-      setCloseConfirm(null)
-      fetchPhases()
-    } catch (err) { showToast(err.response?.data?.detail || '操作失败', 'error') }
-  }
-
   const handleArchive = async () => {
     try {
       await api.put(`/api/admin/phases/${archiveConfirm.id}/archive`)
@@ -146,14 +136,9 @@ export default function AdminPhases({ embedded = false, initialProjectId = '' })
               </div>
             </div>
             <div className="flex items-center gap-2">
-              {viewPhase.status === '未开始' && (
+              {viewPhase.status === '待开放' && (
                 <button onClick={() => handleDeletePhase(viewPhase)} className="px-4 py-2 text-sm font-medium border border-red-300 text-red-500 rounded-lg hover:bg-red-50">
                   <Trash2Icon className="w-4 h-4 inline mr-1" /> 删除阶段
-                </button>
-              )}
-              {viewPhase.status === '进行中' && (
-                <button onClick={() => setCloseConfirm(viewPhase)} className="px-4 py-2 text-sm font-medium border border-yellow-300 text-yellow-600 rounded-lg hover:bg-yellow-50">
-                  <Lock className="w-4 h-4 inline mr-1" /> 关闭阶段
                 </button>
               )}
               {viewPhase.status === '已关闭' && (
@@ -497,14 +482,8 @@ export default function AdminPhases({ embedded = false, initialProjectId = '' })
                   <input type="date" value={editForm.end_date} onChange={(e) => setEditForm({...editForm, end_date: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
                 </div>
               </div>
-              <div>
-                <label className="block text-sm text-gray-600 mb-1">阶段状态</label>
-                <select value={editForm.status || viewPhase.status} onChange={(e) => setEditForm({...editForm, status: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm">
-                  <option value="待开放">待开放</option>
-                  <option value="进行中">进行中</option>
-                  <option value="已关闭">已关闭</option>
-                  <option value="已归档">已归档</option>
-                </select>
+              <div className="rounded-lg bg-indigo-50 px-3 py-2 text-xs text-indigo-700">
+                阶段状态会根据开始日期、结束日期和当前日期自动计算，无需手动选择。
               </div>
               <div><label className="block text-sm text-gray-600 mb-1">描述</label>
                 <textarea value={editForm.description} onChange={(e) => setEditForm({...editForm, description: e.target.value})} rows={2} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
@@ -561,20 +540,6 @@ export default function AdminPhases({ embedded = false, initialProjectId = '' })
               <button onClick={handleSelectExcellent} className="flex-1 py-2.5 text-sm font-medium bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">
                 确认选择 ({selectedExcellent.length})
               </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Close Confirmation */}
-      {closeConfirm && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-sm w-full p-6">
-            <h3 className="text-lg font-semibold mb-2">关闭阶段</h3>
-            <p className="text-sm text-gray-500">确定要关闭「{closeConfirm.name}」吗？关闭后将无法再录入积分。</p>
-            <div className="flex gap-3 mt-6">
-              <button onClick={() => setCloseConfirm(null)} className="flex-1 py-2.5 text-sm font-medium border border-gray-200 rounded-lg hover:bg-gray-50">取消</button>
-              <button onClick={handleClose} className="flex-1 py-2.5 text-sm font-medium bg-yellow-600 text-white rounded-lg hover:bg-yellow-700">确认关闭</button>
             </div>
           </div>
         </div>

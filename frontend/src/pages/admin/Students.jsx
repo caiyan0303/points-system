@@ -8,7 +8,11 @@ import {
   Eye, Upload, Download, Minus, Plus
 } from 'lucide-react'
 import * as XLSX from 'xlsx'
-const CATEGORIES = ['线上课程', '线上考试', '学习输出', '线下出勤', '课堂任务', '实践任务', '小组共创', '项目贡献', '特殊调整']
+const CATEGORIES = [
+  '线上学习', '线上考试', '学习输出', '问卷反馈', '线下出勤',
+  '课堂互动', '课堂任务', '实践任务', '成果转化', '团队共创', '团队贡献',
+  '小组长职责', '项目贡献', '特殊调整'
+]
 
 export default function AdminStudents() {
   const [students, setStudents] = useState([])
@@ -34,7 +38,7 @@ export default function AdminStudents() {
   // Modal states
   const [pointModal, setPointModal] = useState(null) // single
   const [batchPointModal, setBatchPointModal] = useState(false)
-  const [batchPointForm, setBatchPointForm] = useState({ points: '', category: '线上课程', description: '', phase_id: '' })
+  const [batchPointForm, setBatchPointForm] = useState({ points: '', category: '线上学习', description: '', phase_id: '' })
   const [createModal, setCreateModal] = useState(false)
   const [editModal, setEditModal] = useState(null)
   const [viewModal, setViewModal] = useState(null)
@@ -43,13 +47,25 @@ export default function AdminStudents() {
   const [batchData, setBatchData] = useState([])
   const [batchPreview, setBatchPreview] = useState(null)
 
-  const [pointForm, setPointForm] = useState({ points: '', category: '线上课程', description: '', phase_id: '' })
-  const [createForm, setCreateForm] = useState({ real_name: '', password: '123456', email: '', phone: '', department: '', system: '', level1_dept: '', year_id: '', project_id: '', address: '' })
-  const [editForm, setEditForm] = useState({ real_name: '', email: '', phone: '', address: '', department: '', system: '', level1_dept: '', employment_status: '在职', account_status: '启用', group_id: '' })
+  const [pointForm, setPointForm] = useState({ points: '', category: '线上学习', description: '', phase_id: '' })
+  const [createForm, setCreateForm] = useState({ real_name: '', email: '', phone: '', department: '', system: '', level1_dept: '', year_id: '', project_id: '', group_id: '', group_name: '', address: '' })
+  const [editForm, setEditForm] = useState({ real_name: '', email: '', phone: '', address: '', department: '', system: '', level1_dept: '', year_id: '', project_id: '', group_id: '', group_name: '', employment_status: '在职', account_status: '启用' })
 
   const showToast = (msg, type = 'success') => { setToast({ msg, type }); setTimeout(() => setToast(null), 3000) }
 
   const filteredProjects = yearId ? allProjects.filter(p => p.year_id === parseInt(yearId)) : allProjects
+  const createProjects = createForm.year_id
+    ? allProjects.filter(p => p.year_id === parseInt(createForm.year_id))
+    : allProjects
+  const createGroups = createForm.project_id
+    ? groups.filter(g => g.project_id === parseInt(createForm.project_id))
+    : []
+  const editProjects = editForm.year_id
+    ? allProjects.filter(p => p.year_id === parseInt(editForm.year_id))
+    : allProjects
+  const editGroups = editForm.project_id
+    ? groups.filter(g => g.project_id === parseInt(editForm.project_id))
+    : []
 
   const fetchStudents = () => {
     setLoading(true)
@@ -94,7 +110,7 @@ export default function AdminStudents() {
         phase_id: pointForm.phase_id ? parseInt(pointForm.phase_id) : null,
       })
       showToast(`已添加 ${pointForm.points} 积分`)
-      setPointModal(null); setPointForm({ points: '', category: '线上课程', description: '', phase_id: '' })
+      setPointModal(null); setPointForm({ points: '', category: '线上学习', description: '', phase_id: '' })
       fetchStudents()
     } catch (err) { showToast(err.response?.data?.detail || '操作失败', 'error') }
   }
@@ -112,7 +128,7 @@ export default function AdminStudents() {
       }))
       await api.post('/api/admin/points/batch', { records })
       showToast(`已为 ${records.length} 名学员${pts > 0 ? '添加' : '扣减'} ${Math.abs(pts)} 积分`)
-      setBatchPointModal(false); setBatchPointForm({ points: '', category: '线上课程', description: '', phase_id: '' })
+      setBatchPointModal(false); setBatchPointForm({ points: '', category: '线上学习', description: '', phase_id: '' })
       setSelectedIds(new Set()); fetchStudents()
     } catch (err) { showToast(err.response?.data?.detail || '操作失败', 'error') }
   }
@@ -134,9 +150,16 @@ export default function AdminStudents() {
   // Create student
   const handleCreate = async () => {
     try {
-      const { data } = await api.post('/api/admin/students', createForm)
+      const payload = {
+        ...createForm,
+        year_id: createForm.year_id || null,
+        project_id: createForm.project_id || null,
+        group_id: createForm.group_id || null,
+      }
+      const { data } = await api.post('/api/admin/students', payload)
       showToast(data.message || '学员创建成功')
-      setCreateModal(false); setCreateForm({ real_name: '', password: '123456', email: '', phone: '', department: '', system: '', level1_dept: '', year_id: '', project_id: '', address: '' })
+      setCreateModal(false); setCreateForm({ real_name: '', email: '', phone: '', department: '', system: '', level1_dept: '', year_id: '', project_id: '', group_id: '', group_name: '', address: '' })
+      api.get('/api/admin/groups').then(({ data: groupData }) => setGroups(groupData || []))
       fetchStudents()
     } catch (err) { showToast(err.response?.data?.detail || '创建失败', 'error') }
   }
@@ -144,10 +167,10 @@ export default function AdminStudents() {
   // Edit student
   const openEdit = (s) => {
     setEditModal(s)
-    setEditForm({ real_name: s.real_name, email: s.email || '', phone: s.phone || '', address: s.address || '', department: s.department || '', system: s.system || '', level1_dept: s.level1_dept || '', year_id: s.year_id || '', project_id: s.project_id || '', employment_status: s.employment_status, account_status: s.account_status })
+    setEditForm({ real_name: s.real_name, email: s.email || '', phone: s.phone || '', address: s.address || '', department: s.department || '', system: s.system || '', level1_dept: s.level1_dept || '', year_id: s.year_id || '', project_id: s.project_id || '', group_id: s.group_id || '', group_name: s.group_name || '', employment_status: s.employment_status, account_status: s.account_status })
   }
   const handleEdit = async () => {
-    try { await api.put(`/api/admin/students/${editModal.id}`, editForm); showToast('已更新'); setEditModal(null); fetchStudents() }
+    try { await api.put(`/api/admin/students/${editModal.id}`, {...editForm, year_id: editForm.year_id || null, project_id: editForm.project_id || null, group_id: editForm.group_id || null}); showToast('已更新'); setEditModal(null); api.get('/api/admin/groups').then(({ data }) => setGroups(data || [])); fetchStudents() }
     catch (err) { showToast(err.response?.data?.detail || '操作失败', 'error') }
   }
 
@@ -157,9 +180,9 @@ export default function AdminStudents() {
   const handleHardDelete = async () => {
     if (!singleDelete) return
     try {
-      await api.post('/api/admin/students/batch-delete', [singleDelete.id])
+      await api.delete(`/api/admin/students/${singleDelete.id}`)
       showToast('学员已彻底删除'); setSingleDelete(null); fetchStudents()
-    } catch (err) { showToast('删除失败', 'error'); setSingleDelete(null) }
+    } catch (err) { showToast(err.response?.data?.detail || '删除失败', 'error'); setSingleDelete(null) }
   }
 
   // View detail
@@ -193,15 +216,24 @@ export default function AdminStudents() {
         }
                 // 归一化字段名（中文 → 英文）
         const fieldMap = {
-          '姓名': 'real_name', '邮箱': 'email', '手机': 'phone', '地址': 'address',
+          '姓名': 'real_name', '邮箱': 'email', '手机': 'phone', '地址': 'address', '收货地址': 'address',
           '部门': 'department', '体系': 'system', '一级部门': 'level1_dept',
           '所属年度': 'year_name', '培训项目': 'project_name', '所属小组': 'group_name',
-          '在职状态': 'employment_status', '账号状态': 'account_status', '密码': 'password',
+          '项目标注': 'enrollment_label', '备注': 'enrollment_remark',
+          '在职状态': 'employment_status', '账号状态': 'account_status',
         }
         parsed = parsed.map(r => {
           const new_r = { ...r }
           for (const [k, v] of Object.entries(r)) {
-            if (fieldMap[k]) { new_r[fieldMap[k]] = v; delete new_r[k] }
+            const cleanKey = String(k).replace(/^\uFEFF/, '').trim()
+            const cleanValue = typeof v === 'string' ? v.trim() : v
+            if (fieldMap[cleanKey]) {
+              new_r[fieldMap[cleanKey]] = cleanValue
+              delete new_r[k]
+            } else if (cleanKey !== k || cleanValue !== v) {
+              delete new_r[k]
+              new_r[cleanKey] = cleanValue
+            }
           }
           return new_r
         })
@@ -327,6 +359,7 @@ export default function AdminStudents() {
                     <input type="checkbox" checked={selectedIds.size === students.length && students.length > 0} onChange={toggleAll} className="rounded" />
                   </th>
                   <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">姓名</th>
+                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">登录账号</th>
                   <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">所属年度</th>
                   <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">培训项目</th>
                   <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">体系</th>
@@ -334,7 +367,7 @@ export default function AdminStudents() {
                   <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">所属小组</th>
                   <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">邮箱</th>
                   <th className="text-center px-4 py-3 text-xs font-medium text-gray-500">在职</th>
-                  <th className="text-center px-4 py-3 text-xs font-medium text-gray-500">账号</th>
+                  <th className="text-center px-4 py-3 text-xs font-medium text-gray-500">账号状态</th>
                   <th className="text-right px-4 py-3 text-xs font-medium text-gray-500">本期积分</th>
                   <th className="text-right px-4 py-3 text-xs font-medium text-gray-500">总获得</th>
                   <th className="text-right px-4 py-3 text-xs font-medium text-gray-500">可用</th>
@@ -348,6 +381,7 @@ export default function AdminStudents() {
                       <input type="checkbox" checked={selectedIds.has(s.id)} onChange={() => toggleSelect(s.id)} className="rounded" />
                     </td>
                     <td className="px-4 py-3 text-sm font-medium text-gray-900">{s.real_name}</td>
+                    <td className="px-4 py-3 text-sm text-indigo-600">{s.username}</td>
                     <td className="px-4 py-3 text-sm text-gray-500">{s.year_name || '-'}</td>
                     <td className="px-4 py-3 text-sm text-gray-500">{s.project_name || '-'}</td>
                     <td className="px-4 py-3 text-sm text-gray-700">{s.system || '-'}</td>
@@ -427,12 +461,13 @@ export default function AdminStudents() {
             <div className="flex items-center justify-between mb-4"><h3 className="text-lg font-semibold">新增学员</h3><button onClick={() => setCreateModal(false)} className="p-1 hover:bg-gray-100 rounded-lg"><X className="w-5 h-5" /></button></div>
             <div className="grid grid-cols-2 gap-4">
               <div><label className="block text-sm text-gray-600 mb-1">姓名 *</label><input type="text" value={createForm.real_name} onChange={(e) => setCreateForm({...createForm, real_name: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" /></div>
-              <div><label className="block text-sm text-gray-600 mb-1">初始密码</label><input type="text" value={createForm.password} onChange={(e) => setCreateForm({...createForm, password: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" /></div>
+              <div className="rounded-lg bg-indigo-50 px-3 py-2 text-sm text-indigo-700">账号自动使用中文姓名，无需设置密码</div>
               <div><label className="block text-sm text-gray-600 mb-1">体系</label><input type="text" value={createForm.system} onChange={(e) => setCreateForm({...createForm, system: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" /></div>
               <div><label className="block text-sm text-gray-600 mb-1">一级部门</label><input type="text" value={createForm.level1_dept} onChange={(e) => setCreateForm({...createForm, level1_dept: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" /></div>
               <div><label className="block text-sm text-gray-600 mb-1">邮箱</label><input type="email" value={createForm.email} onChange={(e) => setCreateForm({...createForm, email: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" /></div>
-              <div><label className="block text-sm text-gray-600 mb-1">年度</label><select value={createForm.year_id} onChange={(e) => setCreateForm({...createForm, year_id: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"><option value="">选择年度</option>{years.map(y => <option key={y.id} value={y.id}>{y.name}</option>)}</select></div>
-              <div><label className="block text-sm text-gray-600 mb-1">培训项目</label><select value={createForm.project_id} onChange={(e) => setCreateForm({...createForm, project_id: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"><option value="">选择项目</option>{allProjects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></div>
+              <div><label className="block text-sm text-gray-600 mb-1">年度</label><select value={createForm.year_id} onChange={(e) => setCreateForm({...createForm, year_id: e.target.value, project_id: '', group_id: '', group_name: ''})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"><option value="">选择年度</option>{years.map(y => <option key={y.id} value={y.id}>{y.name}</option>)}</select></div>
+              <div><label className="block text-sm text-gray-600 mb-1">培训项目</label><select value={createForm.project_id} onChange={(e) => setCreateForm({...createForm, project_id: e.target.value, group_id: '', group_name: ''})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"><option value="">选择项目</option>{createProjects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></div>
+              <div><label className="block text-sm text-gray-600 mb-1">所属小组</label><input type="text" list="create-student-groups" value={createForm.group_name} onChange={(e) => setCreateForm({...createForm, group_id: '', group_name: e.target.value})} disabled={!createForm.project_id} placeholder={createForm.project_id ? '选择已有小组或输入新小组' : '请先选择培训项目'} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm disabled:bg-gray-100 disabled:text-gray-400" /><datalist id="create-student-groups">{createGroups.map(g => <option key={g.id} value={g.name} />)}</datalist><p className="mt-1 text-xs text-gray-400">没有对应小组时，将按输入名称自动创建</p></div>
               <div className="col-span-2"><label className="block text-sm text-gray-600 mb-1">收货地址</label><input type="text" value={createForm.address} onChange={(e) => setCreateForm({...createForm, address: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" /></div>
             </div>
             <div className="flex gap-3 mt-6"><button onClick={() => setCreateModal(false)} className="flex-1 py-2.5 text-sm border border-gray-200 rounded-lg hover:bg-gray-50">取消</button><button onClick={handleCreate} className="flex-1 py-2.5 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">创建学员</button></div>
@@ -450,8 +485,9 @@ export default function AdminStudents() {
               <div><label className="block text-sm text-gray-600 mb-1">体系</label><input type="text" value={editForm.system || ''} onChange={(e) => setEditForm({...editForm, system: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" /></div>
               <div><label className="block text-sm text-gray-600 mb-1">一级部门</label><input type="text" value={editForm.level1_dept || ''} onChange={(e) => setEditForm({...editForm, level1_dept: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" /></div>
               <div><label className="block text-sm text-gray-600 mb-1">邮箱</label><input type="email" value={editForm.email || ''} onChange={(e) => setEditForm({...editForm, email: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" /></div>
-              <div><label className="block text-sm text-gray-600 mb-1">年度</label><select value={editForm.year_id || ''} onChange={(e) => setEditForm({...editForm, year_id: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"><option value="">选择年度</option>{years.map(y => <option key={y.id} value={y.id}>{y.name}</option>)}</select></div>
-              <div><label className="block text-sm text-gray-600 mb-1">培训项目</label><select value={editForm.project_id || ''} onChange={(e) => setEditForm({...editForm, project_id: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"><option value="">选择项目</option>{allProjects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></div>
+              <div><label className="block text-sm text-gray-600 mb-1">年度</label><select value={editForm.year_id || ''} onChange={(e) => setEditForm({...editForm, year_id: e.target.value, project_id: '', group_id: '', group_name: ''})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"><option value="">选择年度</option>{years.map(y => <option key={y.id} value={y.id}>{y.name}</option>)}</select></div>
+              <div><label className="block text-sm text-gray-600 mb-1">培训项目</label><select value={editForm.project_id || ''} onChange={(e) => setEditForm({...editForm, project_id: e.target.value, group_id: '', group_name: ''})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"><option value="">选择项目</option>{editProjects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></div>
+              <div><label className="block text-sm text-gray-600 mb-1">所属小组</label><input type="text" list="edit-student-groups" value={editForm.group_name || ''} onChange={(e) => setEditForm({...editForm, group_id: '', group_name: e.target.value})} disabled={!editForm.project_id} placeholder={editForm.project_id ? '选择已有小组或输入新小组' : '请先选择培训项目'} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm disabled:bg-gray-100 disabled:text-gray-400" /><datalist id="edit-student-groups">{editGroups.map(g => <option key={g.id} value={g.name} />)}</datalist><p className="mt-1 text-xs text-gray-400">没有对应小组时，将按输入名称自动创建</p></div>
               <div><label className="block text-sm text-gray-600 mb-1">在职状态</label><select value={editForm.employment_status || '在职'} onChange={(e) => setEditForm({...editForm, employment_status: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"><option>在职</option><option>离职</option></select></div>
               <div><label className="block text-sm text-gray-600 mb-1">账号状态</label><select value={editForm.account_status || '启用'} onChange={(e) => setEditForm({...editForm, account_status: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"><option>启用</option><option>终止</option></select></div>
               <div className="col-span-2"><label className="block text-sm text-gray-600 mb-1">收货地址</label><input type="text" value={editForm.address || ''} onChange={(e) => setEditForm({...editForm, address: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" /></div>
@@ -490,11 +526,14 @@ export default function AdminStudents() {
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-2xl w-full p-6">
             <div className="flex items-center justify-between mb-4"><h3 className="text-lg font-semibold">批量导入学员</h3><button onClick={() => { setBatchModal(false); setBatchData([]); setBatchPreview(null) }} className="p-1 hover:bg-gray-100 rounded-lg"><X className="w-5 h-5" /></button></div>
-            <div className="flex items-center gap-3 mb-4">
+            <div className="flex items-center gap-3 mb-3">
               <button onClick={downloadTemplate} className="flex items-center gap-2 px-3 py-2 text-sm border border-dashed border-indigo-300 text-indigo-600 rounded-lg hover:bg-indigo-50">
                 <Download className="w-4 h-4" /> 下载导入模版
               </button>
-              <span className="text-xs text-gray-400">支持 CSV / JSON 格式</span>
+              <span className="text-xs text-gray-400">支持 Excel / CSV / JSON 格式</span>
+            </div>
+            <div className="mb-4 rounded-lg bg-indigo-50 px-3 py-2 text-sm text-indigo-700">
+              导入后会自动创建或关联小组，并为新学员开通中文姓名账号。同一项目已存在的学员会自动跳过；同一年度不能参加两个项目，跨年度参加其他项目时会新增项目关联。
             </div>
             <div className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center mb-4">
               <Upload className="w-10 h-10 text-gray-400 mx-auto mb-3" />
@@ -531,7 +570,7 @@ export default function AdminStudents() {
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-md w-full p-6">
             <div className="flex items-center justify-between mb-4"><h3 className="text-lg font-semibold">确认批量删除</h3><button onClick={() => setDeleteConfirm(false)} className="p-1 hover:bg-gray-100 rounded-lg"><X className="w-5 h-5" /></button></div>
-            <p className="text-sm text-gray-500 mb-4">确定要删除选中的 {'{selectedIds.size}'} 名学员吗？此操作不可撤销。</p>
+            <p className="text-sm text-gray-500 mb-4">确定要删除选中的 {selectedIds.size} 名学员吗？此操作不可撤销。</p>
             <div className="flex gap-3 mt-6"><button onClick={() => setDeleteConfirm(false)} className="flex-1 py-2.5 text-sm border border-gray-200 rounded-lg hover:bg-gray-50">取消</button><button onClick={confirmBatchDelete} className="flex-1 py-2.5 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700">确认删除</button></div>
           </div>
         </div>

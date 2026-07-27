@@ -7,7 +7,8 @@ from datetime import datetime
 # ═══════ 认证 ═══════
 class LoginRequest(BaseModel):
     username: str  # 支持姓名或邮箱
-    password: str
+    password: str = ""
+    role: Optional[str] = None
 
 class TokenResponse(BaseModel):
     access_token: str
@@ -34,20 +35,26 @@ class YearOut(BaseModel):
 
 class ProjectOut(BaseModel):
     id: int; name: str; year_id: int; status: str; description: Optional[str] = None
+    start_date: Optional[datetime] = None; end_date: Optional[datetime] = None
     class Config: from_attributes = True
 
 class YearCreate(BaseModel): name: str
 
-class ProjectCreate(BaseModel): name: str; year_id: Optional[int] = None; year_name: Optional[str] = None; description: Optional[str] = None
+class ProjectCreate(BaseModel):
+    name: str; year_id: Optional[int] = None; year_name: Optional[str] = None
+    start_date: Optional[datetime] = None; end_date: Optional[datetime] = None
+    description: Optional[str] = None
 
 
 # ═══════ 学员 ═══════
 class StudentCreate(BaseModel):
-    real_name: str; password: str = "123456"
+    real_name: str
     email: Optional[str] = None; phone: Optional[str] = None
     address: Optional[str] = None; department: Optional[str] = None
     system: Optional[str] = None; level1_dept: Optional[str] = None
     year_id: Optional[int] = None; project_id: Optional[int] = None
+    group_id: Optional[int] = None
+    group_name: Optional[str] = None
     employment_status: str = "在职"
 
 class StudentUpdate(BaseModel):
@@ -57,6 +64,7 @@ class StudentUpdate(BaseModel):
     system: Optional[str] = None; level1_dept: Optional[str] = None
     year_id: Optional[int] = None; project_id: Optional[int] = None
     group_id: Optional[int] = None
+    group_name: Optional[str] = None
     employment_status: Optional[str] = None
     account_status: Optional[str] = None
 
@@ -67,7 +75,7 @@ class StudentBrief(BaseModel):
     system: Optional[str] = None; level1_dept: Optional[str] = None
     year_id: Optional[int] = None; project_id: Optional[int] = None
     year_name: Optional[str] = None; project_name: Optional[str] = None
-    group_name: Optional[str] = None
+    group_id: Optional[int] = None; group_name: Optional[str] = None
     employment_status: str = "在职"; account_status: str = "启用"
     period_points: int = 0; total_earned: int = 0; available_points: int = 0
     created_at: Optional[datetime] = None
@@ -87,7 +95,7 @@ class StudentDetail(BaseModel):
     recent_awards: List[dict] = []
 
 class BatchImportPreview(BaseModel):
-    total_rows: int = 0; new_count: int = 0; update_count: int = 0
+    total_rows: int = 0; new_count: int = 0; update_count: int = 0; skipped_count: int = 0
     duplicate_emails: List[str] = []
     missing_fields: List[int] = []
     invalid_projects: List[str] = []
@@ -259,6 +267,7 @@ class RedemptionProcess(BaseModel):
 class RedemptionOut(BaseModel):
     id: int; student_id: int; student_name: str = ""
     product_id: int; product_name: str = ""
+    product_image_url: Optional[str] = None
     points_spent: int; status: str
     locked_at: Optional[datetime] = None; approved_at: Optional[datetime] = None
     shipped_at: Optional[datetime] = None; received_at: Optional[datetime] = None

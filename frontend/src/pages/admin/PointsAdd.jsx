@@ -2,13 +2,18 @@ import { useState, useEffect } from 'react'
 import api from '../../api'
 import AppLayout from '../../components/AppLayout'
 import Toast from '../../components/Toast'
-import { Plus, Upload, X, Trash2, Download } from 'lucide-react'
+import { Plus, Upload, X, Trash2, Download, MessageCircle, Send, CheckCircle2 } from 'lucide-react'
 import * as XLSX from 'xlsx'
 
 const CATEGORIES = [
-  '课程学习完成', '作业提交质量', '案例沟通表现', '案例输出成果',
-  '线下课参与', '团队协作贡献', '知识分享输出', '特殊贡献奖励', '其它积分'
+  '线上学习', '线上考试', '学习输出', '问卷反馈', '线下出勤',
+  '课堂互动', '课堂任务', '实践任务', '成果转化', '团队共创', '团队贡献',
+  '小组长职责', '项目贡献', '特殊调整'
 ]
+
+const beijingToday = () => new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit',
+}).format(new Date())
 
 export default function AdminPointsAdd() {
   const [tab, setTab] = useState('single')
@@ -28,12 +33,15 @@ export default function AdminPointsAdd() {
   // Single entry
   const [singleForm, setSingleForm] = useState({
     student_id: '', year_id: '', project_id: '', group_id: '', phase_id: '',
-    points: '', category: '课程学习完成', description: '', obtained_date: new Date().toISOString().split('T')[0]
+    points: '', category: '线上学习', description: '', obtained_date: beijingToday()
   })
+  const [smartText, setSmartText] = useState('')
+  const [smartPreview, setSmartPreview] = useState(null)
+  const [smartError, setSmartError] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
   // Batch entry
-  const [batchRows, setBatchRows] = useState([{ student_id: '', year_id: '', project_id: '', phase_id: '', points: '', category: '课程学习完成', description: '', obtained_date: new Date().toISOString().split('T')[0], group_id: '' }])
+  const [batchRows, setBatchRows] = useState([{ student_id: '', year_id: '', project_id: '', phase_id: '', points: '', category: '线上学习', description: '', obtained_date: beijingToday(), group_id: '' }])
 
   // Excel import
   const [importFile, setImportFile] = useState(null)
@@ -43,7 +51,17 @@ export default function AdminPointsAdd() {
   const showToast = (msg, type = 'success') => { setToast({ msg, type }); setTimeout(() => setToast(null), 3000) }
 
   useEffect(() => {
-    api.get('/api/admin/students', { params: { page_size: 100 } }).then(({ data }) => setStudents(data.items || data))
+    const loadStudents = async () => {
+      const { data: firstPage } = await api.get('/api/admin/students', { params: { page: 1, page_size: 100 } })
+      if (!firstPage.items || firstPage.total_pages <= 1) return setStudents(firstPage.items || firstPage)
+      const remainingPages = await Promise.all(
+        Array.from({ length: firstPage.total_pages - 1 }, (_, index) => (
+          api.get('/api/admin/students', { params: { page: index + 2, page_size: 100 } })
+        ))
+      )
+      setStudents([firstPage, ...remainingPages.map(response => response.data)].flatMap(page => page.items || page))
+    }
+    loadStudents().catch(() => showToast('学员数据加载失败', 'error'))
     api.get('/api/common/years').then(({ data }) => setYears(data.items || data))
     api.get('/api/common/projects').then(({ data }) => setProjects(data.items || data))
     api.get('/api/admin/groups').then(({ data }) => setGroups(data.items || data))
@@ -67,9 +85,117 @@ export default function AdminPointsAdd() {
       if (singleForm.group_id) payload.group_id = parseInt(singleForm.group_id)
       await api.post('/api/admin/points', payload)
       showToast(`${singleForm.points} 积分已录入`)
-      setSingleForm({ student_id: '', year_id: '', project_id: '', group_id: '', phase_id: '', points: '', category: '课程学习完成', description: '', obtained_date: new Date().toISOString().split('T')[0] })
+      setSingleForm({ student_id: '', year_id: '', project_id: '', group_id: '', phase_id: '', points: '', category: '线上学习', description: '', obtained_date: beijingToday() })
     } catch (err) { showToast(err.response?.data?.detail || '录入失败', 'error') }
     finally { setSubmitting(false) }
+  }
+
+  const parseSmartEntry = () => {
+    const text = smartText.trim()
+    setSmartPreview(null)
+    setSmartError('')
+    if (!text) return setSmartError('请输入要录入的积分内容')
+
+    const pointMatch = text.match(/([+＋\-－]\s*\d+)\s*分?/)
+    const points = pointMatch ? parseInt(pointMatch[1].replace('＋', '+').replace('－', '-').replace(/\s/g, '')) : 0
+
+    const namedStudents = students
+      .filter(student => student.real_name && text.includes(student.real_name))
+      .sort((a, b) => b.real_name.length - a.real_name.length)
+    const longestStudentName = namedStudents[0]?.real_name
+    const studentMatches = namedStudents.filter(student => student.real_name === longestStudentName)
+    const student = studentMatches.length === 1 ? studentMatches[0] : null
+    const today = beijingToday()
+    const isCurrentProject = project => (
+      project.status === 'active'
+      && (!project.start_date || project.start_date.slice(0, 10) <= today)
+      && (!project.end_date || project.end_date.slice(0, 10) >= today)
+    )
+    const isCurrentPhase = phase => (
+      phase.status === '进行中'
+      || (phase.start_date?.slice(0, 10) <= today && phase.end_date?.slice(0, 10) >= today)
+    )
+
+    const mentionedYear = years.find(year => year.name && (
+      text.includes(year.name) || text.includes(year.name.replace(/年度$/, ''))
+    ))
+    let projectMatches = projects
+      .filter(project => project.name && text.includes(project.name))
+      .sort((a, b) => b.name.length - a.name.length)
+    const longestProjectName = projectMatches[0]?.name
+    projectMatches = projectMatches.filter(project => (
+      project.name === longestProjectName && (!mentionedYear || project.year_id === mentionedYear.id)
+    ))
+    if (projectMatches.length > 1) {
+      const activeMatches = projectMatches.filter(project => project.status === 'active')
+      if (activeMatches.length === 1) projectMatches = activeMatches
+    }
+    if (projectMatches.length === 0 && student?.project_id) {
+      const assignedProject = projects.find(project => project.id === student.project_id && isCurrentProject(project))
+      if (assignedProject) projectMatches = [assignedProject]
+    }
+    const project = projectMatches.length === 1 ? projectMatches[0] : null
+
+    const phaseCandidates = phases.filter(phase => !project || phase.project_id === project.id)
+    const phaseWasMentioned = /第[一二三四五六七八九十百0-9]+阶段/.test(text)
+    let phaseMatches = phaseCandidates.filter(phase => {
+      const shortName = phase.name?.match(/第[一二三四五六七八九十百0-9]+阶段/)?.[0]
+      return phase.name && (text.includes(phase.name) || (shortName && text.includes(shortName)))
+    })
+    if (phaseMatches.length === 0 && project && !phaseWasMentioned) phaseMatches = phaseCandidates.filter(isCurrentPhase)
+    const phase = phaseMatches.length === 1 ? phaseMatches[0] : null
+
+    const category = CATEGORIES.find(item => text.includes(item))
+    const year = years.find(item => item.id === (mentionedYear?.id || student?.year_id || project?.year_id))
+    const errors = []
+    if (studentMatches.length === 0) errors.push('未识别到学员姓名')
+    if (studentMatches.length > 1) errors.push(`存在多位“${longestStudentName}”，请补充邮箱后使用批量或 Excel 录入`)
+    if (projectMatches.length === 0) errors.push('该学员未关联当前进行中的培训项目')
+    if (projectMatches.length > 1) errors.push('存在同名培训项目，请在语句中补充所属年度')
+    if (project && !year) errors.push('未找到项目所属年度')
+    if (!phase) errors.push('该项目当前没有唯一的进行中阶段，请检查阶段起止时间')
+    if (!category) errors.push(`未识别到积分类别，请使用：${CATEGORIES.join('、')}`)
+    if (!points) errors.push('未识别到加减分数，请使用“+5分”或“-5分”')
+    if (errors.length) return setSmartError(errors.join('；'))
+
+    setSmartPreview({
+      student_id: student.id,
+      student_name: student.real_name,
+      year_id: year?.id,
+      year_name: year?.name || '未关联年度',
+      project_id: project.id,
+      project_name: project.name,
+      phase_id: phase.id,
+      phase_name: phase.name,
+      points,
+      category,
+      description: text,
+      obtained_date: beijingToday(),
+    })
+  }
+
+  const confirmSmartEntry = async () => {
+    if (!smartPreview) return
+    setSubmitting(true)
+    try {
+      await api.post('/api/admin/points', {
+        student_id: smartPreview.student_id,
+        year_id: smartPreview.year_id,
+        project_id: smartPreview.project_id,
+        phase_id: smartPreview.phase_id,
+        points: smartPreview.points,
+        category: smartPreview.category,
+        description: smartPreview.description,
+        obtained_date: smartPreview.obtained_date,
+      })
+      showToast(`已为${smartPreview.student_name}${smartPreview.points > 0 ? '+' : ''}${smartPreview.points}分`)
+      setSmartText('')
+      setSmartPreview(null)
+    } catch (err) {
+      showToast(err.response?.data?.detail || '积分录入失败', 'error')
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   const handleBatchSubmit = async () => {
@@ -78,38 +204,55 @@ export default function AdminPointsAdd() {
     setSubmitting(true)
     try {
       const results = await Promise.allSettled(validRows.map(r => {
+        const student = students.find(item => item.id === parseInt(r.student_id))
+        const today = beijingToday()
+        const project = projects.find(item => (
+          item.id === student?.project_id
+          && item.status === 'active'
+          && (!item.start_date || item.start_date.slice(0, 10) <= today)
+          && (!item.end_date || item.end_date.slice(0, 10) >= today)
+        ))
+        const currentPhases = phases.filter(item => (
+          item.project_id === project?.id
+          && (item.status === '进行中' || (item.start_date?.slice(0, 10) <= today && item.end_date?.slice(0, 10) >= today))
+        ))
+        const phase = r.phase_id
+          ? phases.find(item => item.id === parseInt(r.phase_id) && item.project_id === project?.id)
+          : currentPhases.length === 1 ? currentPhases[0] : null
+        if (!student?.year_id || !project || !phase) return Promise.reject(new Error('无法自动识别学员的当前项目或阶段'))
+        const group = groups.find(item => item.name === student.group_name && item.project_id === project.id)
         const payload = {
           student_id: parseInt(r.student_id),
+          year_id: student.year_id,
+          project_id: project.id,
+          phase_id: phase.id,
           points: parseInt(r.points),
           category: r.category,
           description: r.description,
           obtained_date: r.obtained_date,
         }
-        if (r.phase_id) payload.phase_id = parseInt(r.phase_id)
-        if (r.year_id) payload.year_id = parseInt(r.year_id)
-        if (r.project_id) payload.project_id = parseInt(r.project_id)
+        if (group) payload.group_id = group.id
         return api.post('/api/admin/points', payload)
       }))
       const succeeded = results.filter(r => r.status === 'fulfilled').length
       const failed = results.filter(r => r.status === 'rejected').length
       showToast(`成功录入 ${succeeded} 条${failed > 0 ? `，${failed} 条失败` : ''}`, failed > 0 ? 'error' : 'success')
-      setBatchRows([{ student_id: '', year_id: '', project_id: '', phase_id: '', points: '', category: '课程学习完成', description: '', obtained_date: new Date().toISOString().split('T')[0], group_id: '' }])
+      setBatchRows([{ student_id: '', year_id: '', project_id: '', phase_id: '', points: '', category: '线上学习', description: '', obtained_date: beijingToday(), group_id: '' }])
     } catch (err) { showToast('批量录入失败', 'error') }
     finally { setSubmitting(false) }
   }
 
   // 下载积分导入模板
   const downloadPointsTemplate = () => {
-    const headers = ['姓名', '邮箱', '所属年度', '培训项目', '培训阶段', '所属小组', '积分分类', '积分事项', '积分数值', '获得日期', '备注']
-    const example = ['张三', 'zhangsan@company.com', '2026年度', '优才计划', '第三阶段·引领与创新', '第一组', '线上课程', '课程完成', '10', '2026-07-23', '示例数据']
-    const ws = XLSX.utils.aoa_to_sheet([headers, example])
-    ws['!cols'] = headers.map(() => ({ wch: 18 }))
-    const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb, ws, '积分导入模板')
-    XLSX.writeFile(wb, '积分导入模板.xlsx')
+    const link = document.createElement('a')
+    link.href = '/templates/优才计划积分批量导入模板_可打开版.xlsx'
+    link.download = '优才计划积分批量导入模板_可打开版.xlsx'
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
   }
 
-    const handleFileUpload = async (e) => {
+  const handleFileUpload = async (e) => {
     const file = e.target.files[0]
     if (!file) return
     setImportFile(file)
@@ -118,7 +261,7 @@ export default function AdminPointsAdd() {
       if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
         const buf = await file.arrayBuffer()
         const wb = XLSX.read(buf, { type: 'array' })
-        const ws = wb.Sheets[wb.SheetNames[0]]
+        const ws = wb.Sheets['积分导入明细'] || wb.Sheets[wb.SheetNames[0]]
         data = XLSX.utils.sheet_to_json(ws, { defval: '' })
       } else if (file.name.endsWith('.json')) {
         const text = await file.text()
@@ -133,12 +276,155 @@ export default function AdminPointsAdd() {
           return headers.reduce((obj, h, i) => { obj[h] = vals[i]; return obj }, {})
         })
       }
-      const studentIds = new Set(students.map(s => s.id))
-      const valid = data.filter(d => studentIds.has(parseInt(d.student_id)) && d.points)
-      const invalid = data.length - valid.length
-      const duplicates = data.length - new Set(data.map(d => d.student_id + '_' + d.points)).size
+      const clean = value => String(value ?? '').trim()
+      const normalizeRow = row => Object.fromEntries(
+        Object.entries(row).map(([key, value]) => [clean(key).replace(/\s+/g, ''), value])
+      )
+      const getValue = (row, ...keys) => {
+        for (const key of keys) {
+          if (row[key] !== undefined && clean(row[key]) !== '') return row[key]
+        }
+        return ''
+      }
+      const formatDate = value => {
+        if (typeof value === 'number') {
+          const date = XLSX.SSF.parse_date_code(value)
+          if (date) return `${date.y}-${String(date.m).padStart(2, '0')}-${String(date.d).padStart(2, '0')}`
+        }
+        return clean(value)
+      }
+      const today = beijingToday()
+      const isCurrentProject = project => (
+        project.status === 'active'
+        && (!project.start_date || project.start_date.slice(0, 10) <= today)
+        && (!project.end_date || project.end_date.slice(0, 10) >= today)
+      )
+      const isCurrentPhase = phase => (
+        phase.status === '进行中'
+        || (phase.start_date?.slice(0, 10) <= today && phase.end_date?.slice(0, 10) >= today)
+      )
+
+      const mapped = data.map((source, index) => {
+        const row = normalizeRow(source)
+        const studentName = clean(getValue(row, '姓名', '学员姓名', 'student_name', 'real_name'))
+        const studentEmail = clean(getValue(row, '邮箱', 'email'))
+        const requestedStudentId = parseInt(getValue(row, '学员ID', 'student_id'))
+        let student = Number.isInteger(requestedStudentId) ? students.find(item => item.id === requestedStudentId) : null
+        if (!student && studentEmail) student = students.find(item => clean(item.email).toLowerCase() === studentEmail.toLowerCase())
+        if (!student && studentName) {
+          const matches = students.filter(item => clean(item.real_name) === studentName || clean(item.username) === studentName)
+          if (matches.length === 1) student = matches[0]
+        }
+
+        const yearName = clean(getValue(row, '所属年度', '年度', 'year_name'))
+        const requestedYearId = parseInt(getValue(row, '年度ID', 'year_id'))
+        let year = Number.isInteger(requestedYearId)
+          ? years.find(item => item.id === requestedYearId)
+          : yearName
+            ? years.find(item => clean(item.name).replace(/年度$/, '') === yearName.replace(/年度$/, ''))
+            : years.find(item => item.id === student?.year_id)
+
+        const projectName = clean(getValue(row, '培训项目', '项目名称', 'project_name'))
+        const requestedProjectId = parseInt(getValue(row, '项目ID', 'project_id'))
+        let project = Number.isInteger(requestedProjectId)
+          ? projects.find(item => item.id === requestedProjectId)
+          : projectName
+            ? projects.find(item => clean(item.name) === projectName && (!year || item.year_id === year.id))
+            : projects.find(item => item.id === student?.project_id && isCurrentProject(item))
+        if (!year && project) year = years.find(item => item.id === project.year_id)
+
+        const phaseName = clean(getValue(row, '培训阶段', '阶段名称', 'phase_name'))
+        const requestedPhaseId = parseInt(getValue(row, '阶段ID', 'phase_id'))
+        let phase = Number.isInteger(requestedPhaseId)
+          ? phases.find(item => item.id === requestedPhaseId)
+          : phaseName
+            ? phases.find(item => {
+              const systemName = clean(item.name)
+              const shortName = systemName.match(/第[一二三四五六七八九十百0-9]+阶段/)?.[0]
+              return (systemName === phaseName || shortName === phaseName) && (!project || item.project_id === project.id)
+            })
+            : null
+        if (!phase && !phaseName && project) {
+          const currentPhases = phases.filter(item => item.project_id === project.id && isCurrentPhase(item))
+          if (currentPhases.length === 1) phase = currentPhases[0]
+        }
+
+        const groupName = clean(getValue(row, '所属小组', '小组名称', 'group_name'))
+        const requestedGroupId = parseInt(getValue(row, '小组ID', 'group_id'))
+        const group = Number.isInteger(requestedGroupId)
+          ? groups.find(item => item.id === requestedGroupId)
+          : groups.find(item => clean(item.name) === (groupName || clean(student?.group_name)) && (!project || item.project_id === project.id))
+
+        const recordNumber = clean(getValue(row, '记录编号', 'record_number'))
+        const points = Number(getValue(row, '积分值', '积分数值', '积分', 'points'))
+        const pointCategory = clean(getValue(row, '积分类别', '积分分类', 'category'))
+        const item = clean(getValue(row, '积分事项', 'description'))
+        const taskName = clean(getValue(row, '任务名称', 'task_name'))
+        const completionLevel = clean(getValue(row, '完成档位', 'completion_level'))
+        const dataSource = clean(getValue(row, '数据来源', 'source'))
+        const evidence = clean(getValue(row, '证明材料/链接', '证明材料', 'evidence'))
+        const note = clean(getValue(row, '备注', 'note'))
+        const obtainedDate = formatDate(getValue(row, '获得日期', '日期', 'obtained_date'))
+        const errors = []
+        if (!recordNumber) errors.push('缺少记录编号')
+        if (!studentName) errors.push('缺少姓名')
+        if (!studentEmail) errors.push('缺少邮箱')
+        if (!student) errors.push('未匹配到学员')
+        if (student && studentName && clean(student.real_name) !== studentName) errors.push('姓名与邮箱对应的学员不一致')
+        if (student?.year_id && year && student.year_id !== year.id) errors.push('填写年度与学员所属年度不一致')
+        if (student?.project_id && project && student.project_id !== project.id) errors.push('填写项目与学员所属项目不一致')
+        if (!year) errors.push('未匹配到年度')
+        if (!project) errors.push('未识别到学员当前进行中的培训项目')
+        if (!phase) errors.push('未识别到项目当前进行中的唯一阶段')
+        if (!Number.isFinite(points) || points === 0) errors.push('积分数值无效')
+        if (!pointCategory || !CATEGORIES.includes(pointCategory)) errors.push('积分类别不在模板标准选项中')
+        if (!item) errors.push('缺少积分事项')
+        if (!taskName) errors.push('缺少任务名称')
+        if (!dataSource) errors.push('缺少数据来源')
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(obtainedDate)) errors.push('获得日期格式应为 YYYY-MM-DD')
+        if (groupName && !group) errors.push('未匹配到所属小组')
+
+        return {
+          record_number: recordNumber,
+          student_id: student?.id,
+          student_name: student?.real_name || studentName,
+          year_id: year?.id,
+          project_id: project?.id,
+          phase_id: phase?.id || null,
+          group_id: group?.id || null,
+          points,
+          category: pointCategory,
+          description: [
+            item,
+            taskName && `任务：${taskName}`,
+            completionLevel && `完成档位：${completionLevel}`,
+            dataSource && `数据来源：${dataSource}`,
+            evidence && `证明材料：${evidence}`,
+            note && `备注：${note}`,
+          ].filter(Boolean).join('；'),
+          obtained_date: obtainedDate,
+          _row: index + 2,
+          _errors: errors,
+        }
+      })
+      const recordNumberCounts = mapped.reduce((counts, row) => {
+        if (row.record_number) counts[row.record_number] = (counts[row.record_number] || 0) + 1
+        return counts
+      }, {})
+      mapped.forEach(row => {
+        if (row.record_number && recordNumberCounts[row.record_number] > 1) row._errors.push('记录编号在文件内重复')
+      })
+      const valid = mapped.filter(row => row._errors.length === 0)
+      const invalidRows = mapped.filter(row => row._errors.length > 0)
+      const duplicates = mapped.filter(row => row._errors.includes('记录编号在文件内重复')).length
       setImportPreview(valid)
-      setImportStats({ total: data.length, valid: valid.length, invalid, duplicates })
+      setImportStats({
+        total: data.length,
+        valid: valid.length,
+        invalid: invalidRows.length,
+        duplicates,
+        errors: invalidRows.slice(0, 10).map(row => `第 ${row._row} 行：${row._errors.join('、')}`),
+      })
     } catch (err) { showToast('文件解析失败: ' + err.message, 'error') }
   }
 
@@ -146,23 +432,28 @@ export default function AdminPointsAdd() {
     if (!importPreview || importPreview.length === 0) return
     setSubmitting(true)
     try {
-      const results = await Promise.allSettled(importPreview.map(r => {
-        const payload = {
+      const records = importPreview.map(r => {
+        const record = {
+          record_number: r.record_number,
           student_id: parseInt(r.student_id),
           points: parseInt(r.points),
-          category: r.category || '课程学习完成',
+          category: r.category || '线上学习',
           description: r.description || '',
-          obtained_date: r.obtained_date || new Date().toISOString().split('T')[0],
+          obtained_date: r.obtained_date || beijingToday(),
+          year_id: parseInt(r.year_id),
+          project_id: parseInt(r.project_id),
         }
-        if (r.phase_id) payload.phase_id = parseInt(r.phase_id)
-        return api.post('/api/admin/points', payload)
-      }))
-      const succeeded = results.filter(r => r.status === 'fulfilled').length
-      showToast(`成功导入 ${succeeded} 条积分记录`)
+        if (r.phase_id) record.phase_id = parseInt(r.phase_id)
+        if (r.group_id) record.group_id = parseInt(r.group_id)
+        return record
+      })
+      const { data } = await api.post('/api/admin/points/import', { records })
+      const duplicates = data.preview?.duplicate_count || 0
+      showToast(`${data.message}${duplicates ? `，跳过 ${duplicates} 条重复编号` : ''}`)
       setImportFile(null)
       setImportPreview(null)
       setImportStats(null)
-    } catch (err) { showToast('导入失败', 'error') }
+    } catch (err) { showToast(err.response?.data?.detail || '导入失败', 'error') }
     finally { setSubmitting(false) }
   }
 
@@ -182,7 +473,7 @@ export default function AdminPointsAdd() {
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden mb-6">
         <div className="flex border-b border-gray-200">
           {[
-            { key: 'single', label: '单个录入' },
+            { key: 'single', label: '对话录入' },
             { key: 'batch', label: '批量录入' },
             { key: 'import', label: 'Excel导入' },
           ].map(t => (
@@ -199,7 +490,65 @@ export default function AdminPointsAdd() {
         {/* Single Entry */}
         {tab === 'single' && (
           <div className="p-6">
-            <div className="grid grid-cols-2 gap-4 max-w-2xl">
+            <div className="max-w-3xl">
+              <div className="flex items-start gap-3 mb-5">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-indigo-600">
+                  <MessageCircle className="h-5 w-5" />
+                </div>
+                <div className="rounded-2xl rounded-tl-sm bg-gray-100 px-4 py-3 text-sm text-gray-700">
+                  告诉我要给谁、哪类积分以及加减多少分，例如：<br />
+                  <span className="font-medium text-indigo-700">张三线上学习+5分</span>
+                  <span className="mt-1 block text-xs text-gray-500">系统会根据学员归属和今天的日期自动识别年度、项目与当前阶段。</span>
+                </div>
+              </div>
+
+              <div className="ml-12 rounded-2xl border border-gray-200 bg-white p-3 shadow-sm">
+                <textarea
+                  value={smartText}
+                  onChange={(event) => { setSmartText(event.target.value); setSmartError(''); setSmartPreview(null) }}
+                  onKeyDown={(event) => {
+                    if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') parseSmartEntry()
+                  }}
+                  rows={3}
+                  className="w-full resize-none border-0 px-1 py-1 text-sm text-gray-800 outline-none"
+                  placeholder="请输入积分指令……"
+                />
+                <div className="flex items-center justify-between border-t border-gray-100 pt-3">
+                  <span className="text-xs text-gray-400">按 Ctrl + Enter 解析</span>
+                  <button onClick={parseSmartEntry} className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
+                    <Send className="h-4 w-4" /> 解析内容
+                  </button>
+                </div>
+              </div>
+
+              {smartError && (
+                <div className="ml-12 mt-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600">{smartError}</div>
+              )}
+
+              {smartPreview && (
+                <div className="ml-12 mt-4 overflow-hidden rounded-xl border border-indigo-200 bg-indigo-50/40">
+                  <div className="flex items-center gap-2 border-b border-indigo-100 px-4 py-3 text-sm font-medium text-indigo-700">
+                    <CheckCircle2 className="h-4 w-4" /> 已识别，请确认
+                  </div>
+                  <div className="grid grid-cols-2 gap-x-6 gap-y-3 p-4 text-sm md:grid-cols-3">
+                    <div><p className="text-xs text-gray-400">学员</p><p className="mt-1 font-medium text-gray-800">{smartPreview.student_name}</p></div>
+                    <div><p className="text-xs text-gray-400">积分</p><p className={`mt-1 font-semibold ${smartPreview.points > 0 ? 'text-green-600' : 'text-red-500'}`}>{smartPreview.points > 0 ? '+' : ''}{smartPreview.points} 分</p></div>
+                    <div><p className="text-xs text-gray-400">分类</p><p className="mt-1 font-medium text-gray-800">{smartPreview.category}</p></div>
+                    <div><p className="text-xs text-gray-400">年度</p><p className="mt-1 font-medium text-gray-800">{smartPreview.year_name}</p></div>
+                    <div><p className="text-xs text-gray-400">培训项目</p><p className="mt-1 font-medium text-gray-800">{smartPreview.project_name}</p></div>
+                    <div><p className="text-xs text-gray-400">培训阶段</p><p className="mt-1 font-medium text-gray-800">{smartPreview.phase_name}</p></div>
+                  </div>
+                  <div className="flex justify-end gap-2 border-t border-indigo-100 bg-white px-4 py-3">
+                    <button onClick={() => setSmartPreview(null)} className="rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">重新输入</button>
+                    <button onClick={confirmSmartEntry} disabled={submitting} className="rounded-lg bg-indigo-600 px-5 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50">
+                      {submitting ? '录入中...' : '确认录入'}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="hidden grid-cols-2 gap-4 max-w-2xl">
               <div className="col-span-2">
                 <label className="block text-sm text-gray-600 mb-1">学员 *</label>
                 <div className="relative">
@@ -279,7 +628,7 @@ export default function AdminPointsAdd() {
                 <textarea value={singleForm.description} onChange={(e) => setSingleForm({...singleForm, description: e.target.value})} rows={2} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500" placeholder="积分说明" />
               </div>
             </div>
-            <button onClick={handleSingleSubmit} disabled={submitting} className="mt-6 px-6 py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50">
+            <button onClick={handleSingleSubmit} disabled={submitting} className="hidden mt-6 px-6 py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50">
               {submitting ? '提交中...' : '确认录��'}
             </button>
           </div>
@@ -336,7 +685,7 @@ export default function AdminPointsAdd() {
               </table>
             </div>
             <div className="flex gap-3 mt-4">
-              <button onClick={() => setBatchRows([...batchRows, { student_id: '', year_id: '', project_id: '', phase_id: '', points: '', category: '课程学习完成', description: '', obtained_date: new Date().toISOString().split('T')[0], group_id: '' }])} className="px-4 py-2 text-sm border border-dashed border-gray-300 text-gray-500 rounded-lg hover:bg-gray-50">
+              <button onClick={() => setBatchRows([...batchRows, { student_id: '', year_id: '', project_id: '', phase_id: '', points: '', category: '线上学习', description: '', obtained_date: beijingToday(), group_id: '' }])} className="px-4 py-2 text-sm border border-dashed border-gray-300 text-gray-500 rounded-lg hover:bg-gray-50">
                 <Plus className="w-4 h-4 inline mr-1" /> 添加行
               </button>
               <button onClick={handleBatchSubmit} disabled={submitting} className="px-6 py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50">
@@ -370,12 +719,18 @@ export default function AdminPointsAdd() {
                   <span className="text-red-500">无效: {importStats.invalid}</span>
                   <span className="text-yellow-500">重复: {importStats.duplicates}</span>
                 </div>
+                {importStats.errors?.length > 0 && (
+                  <div className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600 space-y-1">
+                    {importStats.errors.map(error => <p key={error}>{error}</p>)}
+                  </div>
+                )}
                 {importPreview && importPreview.length > 0 && (
                   <div className="max-h-64 overflow-y-auto border rounded-lg">
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="bg-gray-50 sticky top-0">
-                          <th className="px-3 py-2 text-left text-xs text-gray-500">学员ID</th>
+                          <th className="px-3 py-2 text-left text-xs text-gray-500">记录编号</th>
+                          <th className="px-3 py-2 text-left text-xs text-gray-500">学员</th>
                           <th className="px-3 py-2 text-left text-xs text-gray-500">积分</th>
                           <th className="px-3 py-2 text-left text-xs text-gray-500">分类</th>
                         </tr>
@@ -383,7 +738,8 @@ export default function AdminPointsAdd() {
                       <tbody className="divide-y divide-gray-50">
                         {importPreview.slice(0, 20).map((r, i) => (
                           <tr key={i}>
-                            <td className="px-3 py-2 text-gray-700">{r.student_id}</td>
+                            <td className="px-3 py-2 text-gray-500 whitespace-nowrap">{r.record_number}</td>
+                            <td className="px-3 py-2 text-gray-700">{r.student_name}</td>
                             <td className="px-3 py-2 text-indigo-600 font-medium">{r.points}</td>
                             <td className="px-3 py-2 text-gray-500">{r.category || '-'}</td>
                           </tr>

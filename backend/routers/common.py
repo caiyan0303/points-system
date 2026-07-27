@@ -3,10 +3,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from typing import List
+from datetime import datetime
 
 from database import get_db
 from models import AcademicYear, TrainingProject, ProjectStatus, YearStatus, POINT_CATEGORIES
-from models import User, Group, GroupMember, Phase, PhaseParticipant, PhaseGroup, Point, Notification, UserRole, PointStatus
+from models import User, Group, GroupMember, ProjectEnrollment, Phase, PhaseParticipant, PhaseGroup, Point, Notification, UserRole, PointStatus
 from schemas import YearCreate, YearOut, ProjectCreate, ProjectOut
 from auth import get_current_user, require_admin
 
@@ -30,7 +31,7 @@ def get_year(year_id: int, db: Session = Depends(get_db)):
     project_list = []
     for p in projects:
         phases = db.query(Phase).filter(Phase.project_id == p.id).order_by(Phase.id).all()
-        student_count = db.query(func.count(User.id)).filter(User.project_id == p.id, User.role == UserRole.STUDENT.value).scalar() or 0
+        student_count = db.query(func.count(ProjectEnrollment.id)).filter(ProjectEnrollment.project_id == p.id).scalar() or 0
         total_pts = db.query(func.coalesce(func.sum(Point.points), 0)).filter(
             Point.project_id == p.id, Point.status == PointStatus.ACTIVE.value
         ).scalar() or 0
@@ -120,9 +121,16 @@ def create_project(
     year = db.query(AcademicYear).filter(AcademicYear.id == year_id).first()
     if not year:
         raise HTTPException(status_code=404, detail="年度不存在")
+    if data.start_date and data.end_date and data.start_date > data.end_date:
+        raise HTTPException(status_code=400, detail="项目结束时间不能早于开始时间")
     project = TrainingProject(
         name=data.name,
-        year_id=data.year_id,
+        # year_id may come from the newly-created/found year above. Using the
+        # original request value here leaves it as None when only year_name is
+        # submitted and violates training_projects.year_id's NOT NULL rule.
+        year_id=year_id,
+        start_date=data.start_date,
+        end_date=data.end_date,
         description=data.description,
         status=ProjectStatus.ACTIVE.value,
     )
@@ -148,7 +156,7 @@ def list_projects_manage(db: Session = Depends(get_db)):
     result = []
     for p in projects:
         year_name = db.query(AcademicYear.name).filter(AcademicYear.id == p.year_id).scalar() or ""
-        student_count = db.query(func.count(User.id)).filter(User.project_id == p.id, User.role == UserRole.STUDENT.value).scalar() or 0
+        student_count = db.query(func.count(ProjectEnrollment.id)).filter(ProjectEnrollment.project_id == p.id).scalar() or 0
         group_count = db.query(func.count(Group.id)).filter(Group.project_id == p.id).scalar() or 0
         phase_count = db.query(func.count(Phase.id)).filter(Phase.project_id == p.id).scalar() or 0
         total_pts = db.query(func.coalesce(func.sum(Point.points), 0)).filter(
@@ -157,6 +165,8 @@ def list_projects_manage(db: Session = Depends(get_db)):
         result.append({
             "id": p.id, "name": p.name, "year_id": p.year_id, "year_name": year_name,
             "status": p.status, "description": p.description,
+            "start_date": p.start_date.isoformat() if p.start_date else None,
+            "end_date": p.end_date.isoformat() if p.end_date else None,
             "student_count": student_count, "group_count": group_count,
             "phase_count": phase_count, "total_points": total_pts,
             "created_at": p.created_at.isoformat() if p.created_at else None,
@@ -175,10 +185,31 @@ def update_project(project_id: int, data: dict, current_user=Depends(require_adm
         project.description = data["description"]
     if "status" in data:
         project.status = data["status"]
-    if "year_id" in data and data["year_id"]:
+    if "start_date" in data:
+        project.start_date = datetime.fromisoformat(data["start_date"]) if data["start_date"] else None
+    if "end_date" in data:
+        project.end_date = datetime.fromisoformat(data["end_date"]) if data["end_date"] else None
+    if project.start_date and project.end_date and project.start_date > project.end_date:
+        raise HTTPException(status_code=400, detail="项目结束时间不能早于开始时间")
+    if project.start_date or project.end_date:
+        for phase in db.query(Phase).filter(Phase.project_id == project.id).all():
+            if project.start_date and phase.start_date and phase.start_date < project.start_date:
+                raise HTTPException(status_code=400, detail=f"项目开始时间不能晚于阶段“{phase.name}”的开始时间")
+            if project.end_date and phase.end_date and phase.end_date > project.end_date:
+                raise HTTPException(status_code=400, detail=f"项目结束时间不能早于阶段“{phase.name}”的结束时间")
+    year_name = str(data.get("year_name") or "").strip()
+    if year_name:
+        year = db.query(AcademicYear).filter(AcademicYear.name == year_name).first()
+        if not year:
+            year = AcademicYear(name=year_name)
+            db.add(year)
+            db.flush()
+        project.year_id = year.id
+    elif "year_id" in data and data["year_id"]:
         year = db.query(AcademicYear).filter(AcademicYear.id == data["year_id"]).first()
-        if year:
-            project.year_id = data["year_id"]
+        if not year:
+            raise HTTPException(status_code=404, detail="年度不存在")
+        project.year_id = data["year_id"]
     db.commit()
     return {"message": "项目已更新", "id": project.id}
 
@@ -213,12 +244,12 @@ def delete_project(project_id: int, current_user=Depends(require_admin), db: Ses
     name = project.name
 
     # 统计
-    student_count = db.query(func.count(User.id)).filter(User.project_id == project_id, User.role == UserRole.STUDENT.value).scalar() or 0
+    student_count = db.query(func.count(ProjectEnrollment.id)).filter(ProjectEnrollment.project_id == project_id).scalar() or 0
     phase_count = db.query(func.count(Phase.id)).filter(Phase.project_id == project_id).scalar() or 0
     group_count = db.query(func.count(Group.id)).filter(Group.project_id == project_id).scalar() or 0
     point_count = db.query(func.count(Point.id)).filter(Point.project_id == project_id).scalar() or 0
 
-    # 级联删除: 积分 → 阶段参与 → 阶段小组 → 阶段 → 小组成员 → 小组 → 学员 → 项目
+    # 删除项目关系但保留学员账号；学员可能仍参加其他年度或项目。
     db.query(Point).filter(Point.project_id == project_id).delete()
 
     phases_to_del = db.query(Phase.id).filter(Phase.project_id == project_id).all()
@@ -228,17 +259,25 @@ def delete_project(project_id: int, current_user=Depends(require_admin), db: Ses
         db.query(PhaseGroup).filter(PhaseGroup.phase_id.in_(phase_ids)).delete(synchronize_session='fetch')
     db.query(Phase).filter(Phase.project_id == project_id).delete()
 
+    affected_student_ids = [row[0] for row in db.query(ProjectEnrollment.student_id).filter(
+        ProjectEnrollment.project_id == project_id,
+    ).all()]
+    db.query(ProjectEnrollment).filter(ProjectEnrollment.project_id == project_id).delete(synchronize_session=False)
+
     groups_to_del = db.query(Group).filter(Group.project_id == project_id).all()
     for g in groups_to_del:
         db.query(GroupMember).filter(GroupMember.group_id == g.id).delete()
         db.delete(g)
 
-    students_to_del = db.query(User.id).filter(User.project_id == project_id, User.role == UserRole.STUDENT.value).all()
-    student_ids = [s[0] for s in students_to_del]
-    if student_ids:
-        db.query(GroupMember).filter(GroupMember.student_id.in_(student_ids)).delete(synchronize_session='fetch')
-        db.query(Notification).filter(Notification.user_id.in_(student_ids)).delete(synchronize_session='fetch')
-    db.query(User).filter(User.project_id == project_id, User.role == UserRole.STUDENT.value).delete()
+    for student_id in affected_student_ids:
+        student = db.query(User).filter(User.id == student_id).first()
+        if not student or student.project_id != project_id:
+            continue
+        fallback = db.query(ProjectEnrollment).filter(
+            ProjectEnrollment.student_id == student_id,
+        ).order_by(ProjectEnrollment.joined_at.desc()).first()
+        student.project_id = fallback.project_id if fallback else None
+        student.year_id = fallback.year_id if fallback else None
 
     db.delete(project)
     db.commit()

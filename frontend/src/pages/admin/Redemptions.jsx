@@ -3,42 +3,43 @@ import api from '../../api'
 import AppLayout from '../../components/AppLayout'
 import Pagination from '../../components/Pagination'
 import Toast from '../../components/Toast'
-import { X, Check, Ban, Truck, UserCheck, Package } from 'lucide-react'
+import { X, Package, Search } from 'lucide-react'
 
 const STATUSES = [
   { key: '', label: '全部' },
-  { key: 'pending', label: '待审核' },
-  { key: 'approved', label: '已通过' },
-  { key: 'rejected', label: '已拒绝' },
-  { key: 'shipped', label: '已发货' },
-  { key: 'received', label: '已领取' },
-  { key: 'cancelled', label: '已取消' },
-  { key: 'completed', label: '已完成' },
+  { key: '待审核', label: '待审核' },
+  { key: '已通过', label: '已通过' },
+  { key: '已拒绝', label: '已拒绝' },
+  { key: '已发货', label: '已发货' },
+  { key: '已领取', label: '已领取' },
+  { key: '已取消', label: '已取消' },
+  { key: '已完成', label: '已完成' },
 ]
 
 const STATUS_COLORS = {
-  pending: 'bg-yellow-50 text-yellow-600',
-  approved: 'bg-blue-50 text-blue-600',
-  rejected: 'bg-red-50 text-red-500',
-  shipped: 'bg-purple-50 text-purple-600',
-  received: 'bg-green-50 text-green-600',
-  cancelled: 'bg-gray-100 text-gray-500',
-  completed: 'bg-green-50 text-green-600',
+  '待审核': 'bg-yellow-50 text-yellow-700 border-yellow-200',
+  '已通过': 'bg-blue-50 text-blue-700 border-blue-200',
+  '已拒绝': 'bg-red-50 text-red-600 border-red-200',
+  '已发货': 'bg-purple-50 text-purple-700 border-purple-200',
+  '已领取': 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  '已取消': 'bg-gray-100 text-gray-600 border-gray-200',
+  '已完成': 'bg-green-50 text-green-700 border-green-200',
 }
 
-const STATUS_LABEL = {
-  pending: '待审核', approved: '已通过', rejected: '已拒绝',
-  shipped: '已发货', received: '已领取', cancelled: '已取消', completed: '已完成'
-}
+const LEGACY_STATUS = { '待发货': '已通过', '待领取': '已发货' }
+const normalizeStatus = (value) => LEGACY_STATUS[value] || value
 
 export default function AdminRedemptions() {
   const [redemptions, setRedemptions] = useState([])
   const [status, setStatus] = useState('')
+  const [keyword, setKeyword] = useState('')
+  const [searchKeyword, setSearchKeyword] = useState('')
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [toast, setToast] = useState(null)
+  const [updatingId, setUpdatingId] = useState(null)
 
   // Action modals
   const [rejectModal, setRejectModal] = useState(null)
@@ -50,49 +51,60 @@ export default function AdminRedemptions() {
 
   const fetchRedemptions = () => {
     setLoading(true)
-    const params = { page, page_size: 12 }
+    const params = { page, page_size: 20 }
     if (status) params.status = status
+    if (searchKeyword) params.keyword = searchKeyword
     api.get('/api/admin/redemptions', { params })
       .then(({ data }) => { setRedemptions(data.items || data); setTotalPages(data.total_pages || 1); setLoading(false) })
       .catch((err) => { setError(err.response?.data?.detail || '加载失败'); setLoading(false) })
   }
 
-  useEffect(() => { fetchRedemptions() }, [page, status])
+  useEffect(() => { fetchRedemptions() }, [page, status, searchKeyword])
 
-  const handleApprove = async (id) => {
+  const updateStatus = async (id, nextStatus, extra = {}) => {
+    setUpdatingId(id)
     try {
-      await api.put(`/api/admin/redemptions/${id}/approve`)
-      showToast('兑换申请已通过')
+      await api.put(`/api/admin/redemptions/${id}/status`, { status: nextStatus, ...extra })
+      showToast(`兑换状态已更新为${nextStatus}`)
       fetchRedemptions()
-    } catch (err) { showToast(err.response?.data?.detail || '操作失败', 'error') }
+      return true
+    } catch (err) {
+      showToast(err.response?.data?.detail || '操作失败', 'error')
+      return false
+    } finally {
+      setUpdatingId(null)
+    }
+  }
+
+  const handleStatusChange = (redemption, nextStatus) => {
+    if (normalizeStatus(redemption.status) === nextStatus) return
+    if (nextStatus === '已拒绝') {
+      setRejectModal(redemption.id)
+      setRejectReason('')
+      return
+    }
+    if (nextStatus === '已发货') {
+      setShipModal(redemption.id)
+      setShipForm({ express_company: redemption.express_company || '', tracking_number: redemption.tracking_number || '' })
+      return
+    }
+    updateStatus(redemption.id, nextStatus)
   }
 
   const handleReject = async () => {
-    try {
-      await api.put(`/api/admin/redemptions/${rejectModal}/reject`, { reject_reason: rejectReason })
-      showToast('兑换申请已拒绝')
+    const updated = await updateStatus(rejectModal, '已拒绝', { reject_reason: rejectReason })
+    if (updated) {
       setRejectModal(null)
       setRejectReason('')
-      fetchRedemptions()
-    } catch (err) { showToast(err.response?.data?.detail || '操作失败', 'error') }
+    }
   }
 
   const handleShip = async () => {
-    try {
-      await api.put(`/api/admin/redemptions/${shipModal}/ship`, shipForm)
-      showToast('已标记发货')
+    const updated = await updateStatus(shipModal, '已发货', shipForm)
+    if (updated) {
       setShipModal(null)
       setShipForm({ express_company: '', tracking_number: '' })
-      fetchRedemptions()
-    } catch (err) { showToast(err.response?.data?.detail || '操作失败', 'error') }
-  }
-
-  const handleMarkReceived = async (id) => {
-    try {
-      await api.put(`/api/admin/redemptions/${id}/receive`)
-      showToast('已标记领取')
-      fetchRedemptions()
-    } catch (err) { showToast(err.response?.data?.detail || '操作失败', 'error') }
+    }
   }
 
   return (
@@ -103,88 +115,98 @@ export default function AdminRedemptions() {
         <p className="text-gray-500 mt-1">审核学员的兑换申请</p>
       </div>
 
-      {/* Status Tabs */}
-      <div className="flex items-center gap-1 mb-6 overflow-x-auto pb-2">
-        {STATUSES.map(s => (
-          <button
-            key={s.key}
-            onClick={() => { setStatus(s.key); setPage(1) }}
-            className={`px-4 py-2 text-sm font-medium rounded-lg whitespace-nowrap transition-colors ${
-              status === s.key ? 'bg-indigo-600 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'
-            }`}
-          >{s.label}</button>
-        ))}
+      <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex items-center gap-1 overflow-x-auto pb-1">
+          {STATUSES.map(s => (
+            <button
+              key={s.key}
+              onClick={() => { setStatus(s.key); setPage(1) }}
+              className={`px-3 py-2 text-sm font-medium rounded-lg whitespace-nowrap transition-colors ${
+                status === s.key ? 'bg-indigo-600 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'
+              }`}
+            >{s.label}</button>
+          ))}
+        </div>
+        <form
+          className="relative w-full lg:w-72"
+          onSubmit={(event) => { event.preventDefault(); setSearchKeyword(keyword.trim()); setPage(1) }}
+        >
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+          <input
+            type="search"
+            value={keyword}
+            onChange={(event) => setKeyword(event.target.value)}
+            placeholder="搜索学员姓名"
+            className="w-full rounded-lg border border-gray-200 bg-white py-2 pl-9 pr-3 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+          />
+        </form>
       </div>
 
-      {/* Redemption Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
         {loading ? (
-          <div className="col-span-full flex items-center justify-center h-48">
+          <div className="flex h-48 items-center justify-center">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600" />
           </div>
         ) : error ? (
-          <div className="col-span-full flex items-center justify-center h-48 text-red-400">{error}</div>
+          <div className="flex h-48 items-center justify-center text-red-400">{error}</div>
         ) : redemptions.length === 0 ? (
-          <div className="col-span-full flex items-center justify-center h-48 text-gray-400">暂无兑换记录</div>
+          <div className="flex h-48 items-center justify-center text-gray-400">暂无兑换记录</div>
         ) : (
-          redemptions.map((r) => (
-            <div key={r.id} className="bg-white rounded-xl border border-gray-200 p-5 hover:shadow-md transition-shadow">
-              <div className="flex items-start justify-between mb-3">
-                <div>
-                  <p className="text-sm font-medium text-gray-900">{r.student_name || r.real_name}</p>
-                  <p className="text-xs text-gray-500 mt-0.5">{r.product_name}</p>
-                </div>
-                <span className={`text-xs px-2 py-0.5 rounded-full ${STATUS_COLORS[r.status] || 'bg-gray-100 text-gray-500'}`}>
-                  {STATUS_LABEL[r.status] || r.status}
-                </span>
-              </div>
-              <div className="space-y-1 text-sm mb-4">
-                <div className="flex justify-between">
-                  <span className="text-gray-500">消耗积分</span>
-                  <span className="font-semibold text-indigo-600">{r.points_spent || r.points}</span>
-                </div>
-                <div className="flex justify-between text-xs text-gray-400">
-                  <span>{new Date(r.created_at).toLocaleString('zh-CN')}</span>
-                </div>
-                {r.express_company && (
-                  <div className="flex justify-between text-xs text-gray-400">
-                    <span>快递</span>
-                    <span>{r.express_company} - {r.tracking_number}</span>
-                  </div>
-                )}
-                {r.address_snapshot && (
-                  <div className="text-xs text-gray-400 bg-gray-50 p-2 rounded mt-1">收件地址: {r.address_snapshot}</div>
-                )}
-                {r.reject_reason && (
-                  <div className="text-xs text-red-500 bg-red-50 p-2 rounded mt-1">拒绝原因: {r.reject_reason}</div>
-                )}
-              </div>
-
-              {/* Action Buttons */}
-              <div className="flex items-center gap-2 pt-3 border-t border-gray-100">
-                {r.status === 'pending' && (
-                  <>
-                    <button onClick={() => handleApprove(r.id)} className="flex-1 py-1.5 text-xs font-medium bg-green-50 text-green-600 rounded-lg hover:bg-green-100 flex items-center justify-center gap-1">
-                      <Check className="w-3 h-3" /> 通过
-                    </button>
-                    <button onClick={() => setRejectModal(r.id)} className="flex-1 py-1.5 text-xs font-medium bg-red-50 text-red-500 rounded-lg hover:bg-red-100 flex items-center justify-center gap-1">
-                      <Ban className="w-3 h-3" /> 拒绝
-                    </button>
-                  </>
-                )}
-                {r.status === 'approved' && (
-                  <button onClick={() => setShipModal(r.id)} className="flex-1 py-1.5 text-xs font-medium bg-purple-50 text-purple-600 rounded-lg hover:bg-purple-100 flex items-center justify-center gap-1">
-                    <Truck className="w-3 h-3" /> 发货
-                  </button>
-                )}
-                {r.status === 'shipped' && (
-                  <button onClick={() => handleMarkReceived(r.id)} className="flex-1 py-1.5 text-xs font-medium bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 flex items-center justify-center gap-1">
-                    <UserCheck className="w-3 h-3" /> 标记已领取
-                  </button>
-                )}
-              </div>
-            </div>
-          ))
+          <div className="overflow-x-auto">
+            <table className="min-w-[980px] w-full text-left">
+              <thead className="border-b border-gray-200 bg-gray-50 text-xs font-medium text-gray-500">
+                <tr>
+                  <th className="px-4 py-3">申请编号</th>
+                  <th className="px-4 py-3">学员</th>
+                  <th className="px-4 py-3">兑换物品</th>
+                  <th className="px-4 py-3">消耗积分</th>
+                  <th className="px-4 py-3">申请时间</th>
+                  <th className="px-4 py-3">配送/备注</th>
+                  <th className="px-4 py-3">审核状态</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {redemptions.map((r) => {
+                  const currentStatus = normalizeStatus(r.status)
+                  return (
+                    <tr key={r.id} className="align-middle transition-colors hover:bg-gray-50/70">
+                      <td className="px-4 py-4 text-xs font-medium text-gray-500">#{r.id}</td>
+                      <td className="px-4 py-4">
+                        <div className="text-sm font-medium text-gray-900">{r.student_name || r.real_name}</div>
+                        {r.address_snapshot && <div className="mt-1 max-w-48 truncate text-xs text-gray-400" title={r.address_snapshot}>{r.address_snapshot}</div>}
+                      </td>
+                      <td className="px-4 py-4">
+                        <div className="flex items-center gap-3">
+                          <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-gray-100">
+                            {r.product_image_url ? <img src={r.product_image_url} alt={r.product_name} className="h-full w-full object-cover" /> : <Package className="h-5 w-5 text-gray-400" />}
+                          </div>
+                          <span className="max-w-44 text-sm font-medium text-gray-800">{r.product_name}</span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-4 text-sm font-semibold text-indigo-600">{r.points_spent ?? r.points}</td>
+                      <td className="px-4 py-4 text-xs text-gray-500">{r.created_at ? new Date(r.created_at).toLocaleString('zh-CN') : '-'}</td>
+                      <td className="px-4 py-4 text-xs text-gray-500">
+                        {r.express_company ? <div>{r.express_company} · {r.tracking_number || '未填单号'}</div> : <div className="text-gray-400">暂无配送信息</div>}
+                        {currentStatus === '已拒绝' && r.reject_reason && <div className="mt-1 max-w-48 truncate text-red-500" title={r.reject_reason}>拒绝：{r.reject_reason}</div>}
+                        {r.remark && <div className="mt-1 max-w-48 truncate" title={r.remark}>备注：{r.remark}</div>}
+                      </td>
+                      <td className="px-4 py-4">
+                        <select
+                          value={currentStatus}
+                          onChange={(event) => handleStatusChange(r, event.target.value)}
+                          disabled={updatingId === r.id}
+                          className={`min-w-28 rounded-lg border px-3 py-2 text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-500 disabled:cursor-wait disabled:opacity-60 ${STATUS_COLORS[currentStatus] || 'border-gray-200 bg-gray-50 text-gray-600'}`}
+                          aria-label={`修改${r.student_name || '学员'}的兑换状态`}
+                        >
+                          {STATUSES.filter(item => item.key).map(item => <option key={item.key} value={item.key}>{item.label}</option>)}
+                        </select>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 

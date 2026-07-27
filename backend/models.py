@@ -1,6 +1,6 @@
 """优才计划积分管理平台 — 数据模型 (15 张表)"""
 
-from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Float, JSON
+from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Float, JSON, UniqueConstraint
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
 import enum
@@ -83,6 +83,7 @@ class RedemptionStatus(str, enum.Enum):
     PENDING_PICKUP = "待领取"
     RECEIVED = "已领取"
     CANCELLED = "已取消"
+    COMPLETED = "已完成"
 
 
 class AwardType(str, enum.Enum):
@@ -97,9 +98,9 @@ class AwardType(str, enum.Enum):
 # ═══════════════ 积分分类 ═══════════════
 
 POINT_CATEGORIES = [
-    "线上课程", "线上考试", "学习输出",
-    "线下出勤", "课堂任务", "实践任务",
-    "小组共创", "项目贡献", "特殊调整",
+    "线上学习", "线上考试", "学习输出", "问卷反馈",
+    "线下出勤", "课堂互动", "课堂任务", "实践任务", "成果转化",
+    "团队共创", "团队贡献", "小组长职责", "项目贡献", "特殊调整",
 ]
 
 
@@ -127,6 +128,8 @@ class TrainingProject(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String(100), nullable=False)
     year_id = Column(Integer, ForeignKey("academic_years.id"), nullable=False, index=True)
+    start_date = Column(DateTime, nullable=True)
+    end_date = Column(DateTime, nullable=True)
     status = Column(String(20), nullable=False, default=ProjectStatus.ACTIVE.value)
     description = Column(Text, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
@@ -135,6 +138,7 @@ class TrainingProject(Base):
     users = relationship("User", back_populates="project_rel")
     groups = relationship("Group", back_populates="project_rel")
     phases = relationship("Phase", back_populates="project_rel")
+    enrollments = relationship("ProjectEnrollment", back_populates="project")
 
 
 class User(Base):
@@ -166,6 +170,7 @@ class User(Base):
     phase_participations = relationship("PhaseParticipant", back_populates="student")
     redemptions = relationship("Redemption", back_populates="student")
     awards_received = relationship("PrizeAward", back_populates="student", foreign_keys="PrizeAward.student_id")
+    project_enrollments = relationship("ProjectEnrollment", back_populates="student")
 
 
 class Group(Base):
@@ -183,6 +188,7 @@ class Group(Base):
     project_rel = relationship("TrainingProject", back_populates="groups")
     members = relationship("GroupMember", back_populates="group")
     phase_participations = relationship("PhaseGroup", back_populates="group")
+    project_enrollments = relationship("ProjectEnrollment", back_populates="group")
 
 
 class GroupMember(Base):
@@ -197,6 +203,29 @@ class GroupMember(Base):
 
     group = relationship("Group", back_populates="members")
     student = relationship("User", back_populates="group_memberships")
+
+
+class ProjectEnrollment(Base):
+    """学员参与项目关系；同一账号可以跨年度、跨项目重复入选。"""
+    __tablename__ = "project_enrollments"
+    __table_args__ = (
+        UniqueConstraint("student_id", "project_id", name="uq_project_enrollment_student_project"),
+        UniqueConstraint("student_id", "year_id", name="uq_project_enrollment_student_year"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    student_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    year_id = Column(Integer, ForeignKey("academic_years.id"), nullable=False, index=True)
+    project_id = Column(Integer, ForeignKey("training_projects.id"), nullable=False, index=True)
+    group_id = Column(Integer, ForeignKey("groups.id"), nullable=True, index=True)
+    status = Column(String(20), nullable=False, default="在读")
+    label = Column(String(50), nullable=True)
+    remark = Column(Text, nullable=True)
+    joined_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    student = relationship("User", back_populates="project_enrollments")
+    project = relationship("TrainingProject", back_populates="enrollments")
+    group = relationship("Group", back_populates="project_enrollments")
 
 
 class Phase(Base):

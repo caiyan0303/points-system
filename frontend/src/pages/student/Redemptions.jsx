@@ -2,33 +2,31 @@ import { useState, useEffect } from 'react'
 import api from '../../api'
 import AppLayout from '../../components/AppLayout'
 import Toast from '../../components/Toast'
-import { Package, Truck, X } from 'lucide-react'
+import { Package, Truck } from 'lucide-react'
 
 const STATUSES = [
   { key: '', label: '全部' },
-  { key: 'pending', label: '待审核' },
-  { key: 'approved', label: '已通过' },
-  { key: 'rejected', label: '已拒绝' },
-  { key: 'shipped', label: '已发货' },
-  { key: 'received', label: '已领取' },
-  { key: 'cancelled', label: '已取消' },
-  { key: 'completed', label: '已完成' },
+  { key: '待审核', label: '待审核' },
+  { key: '已通过', label: '已通过' },
+  { key: '已拒绝', label: '已拒绝' },
+  { key: '已发货', label: '已发货' },
+  { key: '已领取', label: '已领取' },
+  { key: '已取消', label: '已取消' },
+  { key: '已完成', label: '已完成' },
 ]
 
 const STATUS_COLORS = {
-  pending: 'bg-yellow-50 text-yellow-600',
-  approved: 'bg-blue-50 text-blue-600',
-  rejected: 'bg-red-50 text-red-500',
-  shipped: 'bg-purple-50 text-purple-600',
-  received: 'bg-green-50 text-green-600',
-  cancelled: 'bg-gray-100 text-gray-500',
-  completed: 'bg-green-50 text-green-600',
+  '待审核': 'bg-yellow-50 text-yellow-600',
+  '已通过': 'bg-blue-50 text-blue-600',
+  '已拒绝': 'bg-red-50 text-red-500',
+  '已发货': 'bg-purple-50 text-purple-600',
+  '已领取': 'bg-emerald-50 text-emerald-600',
+  '已取消': 'bg-gray-100 text-gray-500',
+  '已完成': 'bg-green-50 text-green-600',
 }
 
-const STATUS_LABEL = {
-  pending: '待审核', approved: '已通过', rejected: '已拒绝',
-  shipped: '已发货', received: '已领取', cancelled: '已取消', completed: '已完成'
-}
+const LEGACY_STATUS = { '待发货': '已通过', '待领取': '已发货' }
+const normalizeStatus = (value) => LEGACY_STATUS[value] || value
 
 export default function StudentRedemptions() {
   const [redemptions, setRedemptions] = useState([])
@@ -91,8 +89,9 @@ export default function StudentRedemptions() {
         <div className="flex items-center justify-center h-48 text-gray-400">暂无兑换记录</div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {redemptions.map((r) => (
-            <div key={r.id} className="bg-white rounded-xl border border-gray-200 p-5">
+          {redemptions.map((r) => {
+            const currentStatus = normalizeStatus(r.status)
+            return <div key={r.id} className="bg-white rounded-xl border border-gray-200 p-5">
               <div className="flex items-start justify-between mb-3">
                 <div>
                   <div className="flex items-center gap-2">
@@ -100,8 +99,8 @@ export default function StudentRedemptions() {
                     <p className="text-sm font-medium text-gray-900">{r.product_name || '-'}</p>
                   </div>
                 </div>
-                <span className={`text-xs px-2 py-0.5 rounded-full ${STATUS_COLORS[r.status] || 'bg-gray-100 text-gray-500'}`}>
-                  {STATUS_LABEL[r.status] || r.status}
+                <span className={`text-xs px-2 py-0.5 rounded-full ${STATUS_COLORS[currentStatus] || 'bg-gray-100 text-gray-500'}`}>
+                  {currentStatus}
                 </span>
               </div>
               <div className="space-y-1 text-sm mb-4">
@@ -119,25 +118,25 @@ export default function StudentRedemptions() {
                     {r.tracking_number && <span className="text-gray-400 ml-2">({r.tracking_number})</span>}
                   </div>
                 )}
-                {r.reject_reason && (
+                {currentStatus === '已拒绝' && r.reject_reason && (
                   <div className="p-2 bg-red-50 rounded text-xs text-red-500 mt-2">
                     拒绝原因: {r.reject_reason}
                   </div>
                 )}
               </div>
-              {r.status === 'pending' && (
+              {currentStatus === '待审核' && (
                 <button
                   onClick={() => setCancelId(r.id)}
                   className="w-full py-2 text-sm font-medium border border-red-200 text-red-500 rounded-lg hover:bg-red-50"
                 >取消兑换</button>
               )}
-              {r.status === 'shipped' && (
+              {currentStatus === '已发货' && (
                 <div className="flex items-center gap-1 text-xs text-purple-600 bg-purple-50 rounded-lg px-3 py-2">
                   <Truck className="w-3 h-3" /> 已发货，请注意查收
                 </div>
               )}
             </div>
-          ))}
+          })}
         </div>
       )}
 
