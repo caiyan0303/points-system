@@ -23,7 +23,17 @@ export default function StudentPhaseOverview() {
       try {
         const { data } = await api.get(`/api/student/phases/${phaseId}`)
         setPhaseDetails(prev => ({ ...prev, [phaseId]: data }))
-      } catch (e) {}
+      } catch (e) {
+        setPhaseDetails(prev => ({
+          ...prev,
+          [phaseId]: {
+            rankings: [],
+            group_rankings: [],
+            category_details: [],
+            load_error: e.response?.data?.detail || '阶段排名加载失败，请稍后重试',
+          },
+        }))
+      }
     }
   }
 
@@ -86,6 +96,11 @@ export default function StudentPhaseOverview() {
 
               {expandedPhase === p.phase_id && phaseDetails[p.phase_id] && (
                 <div className="border-t border-gray-100 p-5 bg-gray-50/50">
+                  {phaseDetails[p.phase_id].load_error && (
+                    <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+                      {phaseDetails[p.phase_id].load_error}
+                    </div>
+                  )}
                   {phaseDetails[p.phase_id].category_details?.length > 0 && (
                     <div className="mb-4">
                       <h4 className="text-sm font-medium text-gray-700 mb-2">积分明细</h4>
