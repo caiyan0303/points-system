@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import api from '../../api'
 import AppLayout from '../../components/AppLayout'
 import Toast from '../../components/Toast'
-import { ShoppingBag, X, Package, Clock } from 'lucide-react'
+import { X, Package, Clock } from 'lucide-react'
 
 export default function StudentShop() {
   const [products, setProducts] = useState([])
@@ -11,6 +11,7 @@ export default function StudentShop() {
   const [error, setError] = useState(null)
   const [toast, setToast] = useState(null)
   const [redeemModal, setRedeemModal] = useState(null)
+  const [imagePreview, setImagePreview] = useState(null)
   const [processing, setProcessing] = useState(false)
 
   const showToast = (msg, type = 'success') => { setToast({ msg, type }); setTimeout(() => setToast(null), 3000) }
@@ -23,6 +24,15 @@ export default function StudentShop() {
       .then(({ data }) => setStats(data))
       .catch(() => {})
   }, [])
+
+  useEffect(() => {
+    if (!imagePreview) return
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') setImagePreview(null)
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [imagePreview])
 
   const handleRedeem = async () => {
     setProcessing(true)
@@ -71,13 +81,23 @@ export default function StudentShop() {
             const btn = getButtonState(p)
             return (
               <div key={p.id} className="bg-white rounded-xl border border-gray-200 p-5 hover:shadow-md transition-shadow">
-                <div className="w-full h-32 bg-gray-100 rounded-lg flex items-center justify-center mb-3">
-                  {p.image_url ? (
-                    <img src={p.image_url} alt={p.name} className="w-full h-full object-cover rounded-lg" />
-                  ) : (
+                {p.image_url ? (
+                  <button
+                    type="button"
+                    onClick={() => setImagePreview(p)}
+                    className="group relative block w-full h-32 bg-gray-100 rounded-lg overflow-hidden mb-3 cursor-zoom-in focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    aria-label={`查看${p.name}大图`}
+                  >
+                    <img src={p.image_url} alt={p.name} className="w-full h-full object-cover transition-transform group-hover:scale-105" />
+                    <span className="absolute inset-x-0 bottom-0 bg-black/45 py-1 text-center text-xs text-white opacity-0 transition-opacity group-hover:opacity-100 group-focus:opacity-100">
+                      点击查看大图
+                    </span>
+                  </button>
+                ) : (
+                  <div className="w-full h-32 bg-gray-100 rounded-lg flex items-center justify-center mb-3">
                     <Package className="w-10 h-10 text-gray-400" />
-                  )}
-                </div>
+                  </div>
+                )}
                 <h3 className="font-semibold text-gray-900 text-sm mb-2">{p.name}</h3>
                 <div className="space-y-1 text-sm mb-3">
                   <div className="flex justify-between">
@@ -110,6 +130,33 @@ export default function StudentShop() {
               </div>
             )
           })}
+        </div>
+      )}
+
+      {imagePreview && (
+        <div
+          className="fixed inset-0 bg-black/75 z-[60] flex items-center justify-center p-4"
+          onClick={() => setImagePreview(null)}
+          role="dialog"
+          aria-modal="true"
+          aria-label={`${imagePreview.name}图片预览`}
+        >
+          <div className="relative max-w-5xl w-full" onClick={(event) => event.stopPropagation()}>
+            <button
+              type="button"
+              onClick={() => setImagePreview(null)}
+              className="absolute -top-3 -right-3 z-10 flex h-10 w-10 items-center justify-center rounded-full bg-white text-gray-700 shadow-lg hover:bg-gray-100"
+              aria-label="关闭图片预览"
+            >
+              <X className="h-5 w-5" />
+            </button>
+            <img
+              src={imagePreview.image_url}
+              alt={imagePreview.name}
+              className="max-h-[85vh] w-full rounded-xl bg-white object-contain shadow-2xl"
+            />
+            <div className="mt-3 text-center text-sm font-medium text-white">{imagePreview.name}</div>
+          </div>
         </div>
       )}
 

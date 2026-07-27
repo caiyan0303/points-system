@@ -1,16 +1,19 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
+import * as XLSX from 'xlsx'
 import api from '../../api'
 import AppLayout from '../../components/AppLayout'
 import {
   Users, TrendingUp, ClipboardCheck, ShoppingBag, Layers,
-  UserCheck, Gift, PlusCircle, Award, Clock
+  UserCheck, Gift, PlusCircle, Award, Clock, Download
 } from 'lucide-react'
 
 export default function AdminDashboard() {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [exporting, setExporting] = useState(false)
+  const [exportMessage, setExportMessage] = useState('')
   const navigate = useNavigate()
 
   useEffect(() => {
@@ -18,6 +21,41 @@ export default function AdminDashboard() {
       .then(({ data }) => { setData(data); setLoading(false) })
       .catch((err) => { setError(err.response?.data?.detail || '加载失败'); setLoading(false) })
   }, [])
+
+  const handleExportAll = async () => {
+    setExporting(true)
+    setExportMessage('')
+    try {
+      const { data: exportData } = await api.get('/api/admin/export/all-data')
+      const workbook = XLSX.utils.book_new()
+      exportData.sheets.forEach((sheetData) => {
+        const rows = Array.isArray(sheetData.rows) ? sheetData.rows : []
+        const worksheet = rows.length
+          ? XLSX.utils.json_to_sheet(rows)
+          : XLSX.utils.aoa_to_sheet([['暂无数据']])
+        if (rows.length) {
+          const headers = Object.keys(rows[0])
+          worksheet['!cols'] = headers.map((header) => ({
+            wch: Math.min(36, Math.max(
+              String(header).length * 2 + 2,
+              ...rows.slice(0, 200).map((row) => String(row[header] ?? '').length + 2),
+            )),
+          }))
+          if (worksheet['!ref']) worksheet['!autofilter'] = { ref: worksheet['!ref'] }
+        } else {
+          worksheet['!cols'] = [{ wch: 16 }]
+        }
+        XLSX.utils.book_append_sheet(workbook, worksheet, sheetData.name.slice(0, 31))
+      })
+      XLSX.writeFile(workbook, exportData.filename || '积分商城全部数据.xlsx')
+      setExportMessage('全部数据已导出')
+    } catch (err) {
+      setExportMessage(err.response?.data?.detail || '导出失败，请稍后重试')
+    } finally {
+      setExporting(false)
+      setTimeout(() => setExportMessage(''), 4000)
+    }
+  }
 
   if (loading) {
     return (
@@ -49,16 +87,24 @@ export default function AdminDashboard() {
   const quickActions = [
     { label: '新增学员', icon: Users, path: '/admin/students', color: 'bg-indigo-100 text-indigo-600 hover:bg-indigo-200' },
     { label: '录入积分', icon: PlusCircle, path: '/admin/points', color: 'bg-green-100 text-green-600 hover:bg-green-200' },
-    { label: '创建阶段', icon: Layers, path: '/admin/phases', color: 'bg-orange-100 text-orange-600 hover:bg-orange-200' },
+    { label: '创建阶段', icon: Layers, path: '/admin/projects?tab=phases', color: 'bg-orange-100 text-orange-600 hover:bg-orange-200' },
     { label: '现场发放', icon: Gift, path: '/admin/on-site', color: 'bg-pink-100 text-pink-600 hover:bg-pink-200' },
     { label: '新增商品', icon: ShoppingBag, path: '/admin/products', color: 'bg-purple-100 text-purple-600 hover:bg-purple-200' },
   ]
 
   return (
     <AppLayout>
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">管理仪表盘</h1>
-        <p className="text-gray-500 mt-1">积分管理系统概览</p>
+      <div className="mb-6 flex items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">管理仪表盘</h1>
+          <p className="text-gray-500 mt-1">积分管理系统概览</p>
+        </div>
+        <div className="flex items-center gap-3">
+          {exportMessage && <span className={`text-sm ${exportMessage.includes('失败') ? 'text-red-500' : 'text-green-600'}`}>{exportMessage}</span>}
+          <button onClick={handleExportAll} disabled={exporting} className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-60">
+            <Download className="w-4 h-4" /> {exporting ? '正在导出…' : '导出全部数据'}
+          </button>
+        </div>
       </div>
 
       {/* Stat Cards */}
@@ -104,7 +150,7 @@ export default function AdminDashboard() {
             <h2 className="font-semibold text-gray-900 flex items-center gap-2">
               <Layers className="w-4 h-4" /> 阶段概览
             </h2>
-            <button onClick={() => navigate('/admin/phases')} className="text-sm text-indigo-600 hover:text-indigo-700">
+            <button onClick={() => navigate('/admin/projects?tab=phases')} className="text-sm text-indigo-600 hover:text-indigo-700">
               管理阶段 &rarr;
             </button>
           </div>
@@ -164,7 +210,7 @@ export default function AdminDashboard() {
             <h2 className="font-semibold text-gray-900 flex items-center gap-2">
               <TrendingUp className="w-4 h-4" /> 积分排名预览
             </h2>
-            <button onClick={() => navigate('/admin/phases')} className="text-sm text-indigo-600 hover:text-indigo-700">
+            <button onClick={() => navigate('/admin/projects?tab=phases')} className="text-sm text-indigo-600 hover:text-indigo-700">
               查看排名 &rarr;
             </button>
           </div>

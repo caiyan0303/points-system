@@ -1,5 +1,6 @@
 """优才计划积分管理平台 — 种子数据"""
 
+import os
 from datetime import datetime, timezone, timedelta
 from database import engine, SessionLocal, Base
 from models import *
@@ -29,7 +30,11 @@ def seed():
     db.flush()
 
     # ═══ 管理员 ═══
-    admin = User(username="admin", password_hash=hash_password("admin123"), role=UserRole.ADMIN.value, real_name="HR管理员", email="admin@company.com")
+    admin_username = os.getenv("SEED_ADMIN_USERNAME", "admin")
+    admin_password = os.getenv("SEED_ADMIN_PASSWORD")
+    if not admin_password:
+        raise RuntimeError("运行初始化前请设置 SEED_ADMIN_PASSWORD，禁止使用公开默认密码")
+    admin = User(username=admin_username, password_hash=hash_password(admin_password), role=UserRole.ADMIN.value, real_name="HR管理员", email="admin@company.com")
     db.add(admin)
     db.flush()
 
@@ -256,7 +261,7 @@ def seed():
     print("="*60)
     print(f"  年度: 2个（2025已归档 + 2026当前）")
     print(f"  培训项目: 3个（优才计划 + 优才计划PLUS + 2025历史）")
-    print(f"  管理员: admin / admin123")
+    print(f"  管理员账号: {admin_username}（密码来自 SEED_ADMIN_PASSWORD）")
     print(f"  优才计划学员: 8人（张三~吴十）/ 123456")
     print(f"  优才计划PLUS学员: 4人（郑十一~卫十四）/ 123456")
     print(f"  小组: 4个（3个优才 + 1个PLUS）")

@@ -21,6 +21,7 @@ export default function AdminGroups() {
   const [availableStudents, setAvailableStudents] = useState([])
   const [selectedStudent, setSelectedStudent] = useState('')
   const [detailTab, setDetailTab] = useState('members')
+  const [deleteGroup, setDeleteGroup] = useState(null)
 
   const showToast = (msg, type = 'success') => { setToast({ msg, type }); setTimeout(() => setToast(null), 3000) }
 
@@ -89,6 +90,23 @@ export default function AdminGroups() {
     } catch (err) { showToast(err.response?.data?.detail || '操作失败', 'error') }
   }
 
+  const handleDeleteGroup = async () => {
+    if (!deleteGroup) return
+    try {
+      const { data } = await api.delete(`/api/admin/groups/${deleteGroup.id}`)
+      showToast(data.message || '小组已删除')
+      if (viewGroup?.id === deleteGroup.id) {
+        setViewGroup(null)
+        setGroupDetail(null)
+      }
+      setDeleteGroup(null)
+      fetchGroups()
+    } catch (err) {
+      showToast(err.response?.data?.detail || '删除失败', 'error')
+      setDeleteGroup(null)
+    }
+  }
+
   return (
     <AppLayout>
       <Toast message={toast?.msg} type={toast?.type} onClose={() => setToast(null)} />
@@ -103,6 +121,9 @@ export default function AdminGroups() {
               <h1 className="text-2xl font-bold text-gray-900">{viewGroup.name}</h1>
               <p className="text-gray-500 mt-1">小组详情</p>
             </div>
+            <button onClick={() => setDeleteGroup(viewGroup)} className="ml-auto flex items-center gap-1 px-3 py-2 text-sm border border-red-200 text-red-500 rounded-lg hover:bg-red-50">
+              <Trash2 className="w-4 h-4" /> 删除小组
+            </button>
           </div>
 
           {groupDetail ? (
@@ -267,7 +288,12 @@ export default function AdminGroups() {
                   <div key={g.id} onClick={() => openDetail(g)} className="bg-white rounded-xl border border-gray-200 p-5 hover:shadow-md cursor-pointer transition-shadow">
                     <div className="flex items-center justify-between mb-3">
                       <h3 className="font-semibold text-gray-900">{g.name}</h3>
-                      <ChevronRight className="w-4 h-4 text-gray-400" />
+                      <div className="flex items-center gap-2">
+                        <button onClick={(event) => { event.stopPropagation(); setDeleteGroup(g) }} aria-label={`删除${g.name}`} className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg">
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                        <ChevronRight className="w-4 h-4 text-gray-400" />
+                      </div>
                     </div>
                     <div className="space-y-2 text-sm">
                       <div className="flex justify-between"><span className="text-gray-500">成员</span><span className="font-medium">{g.member_count || 0} 人</span></div>
@@ -338,6 +364,20 @@ export default function AdminGroups() {
             <div className="flex gap-3 mt-6">
               <button onClick={() => setAddMemberModal(false)} className="flex-1 py-2.5 text-sm font-medium border border-gray-200 rounded-lg hover:bg-gray-50">取消</button>
               <button onClick={handleAddMember} disabled={!selectedStudent} className="flex-1 py-2.5 text-sm font-medium bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50">添加</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {deleteGroup && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6">
+            <h3 className="text-lg font-semibold text-gray-900">确认删除小组</h3>
+            <p className="mt-3 text-sm text-gray-600">确定删除“{deleteGroup.name}”吗？</p>
+            <p className="mt-2 text-sm text-gray-500">小组内的学员、历史积分和奖品记录都会保留，相关学员将变为未分组。</p>
+            <div className="flex gap-3 mt-6">
+              <button onClick={() => setDeleteGroup(null)} className="flex-1 py-2.5 text-sm font-medium border border-gray-200 rounded-lg hover:bg-gray-50">取消</button>
+              <button onClick={handleDeleteGroup} className="flex-1 py-2.5 text-sm font-medium bg-red-600 text-white rounded-lg hover:bg-red-700">确认删除</button>
             </div>
           </div>
         </div>

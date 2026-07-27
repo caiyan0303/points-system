@@ -19,14 +19,14 @@ export default function LoginPage() {
     setError('')
     setLoading(true)
     try {
-      const user = await login(username, password)
+      const user = await login(username, password, role)
       if (user.role === 'admin') {
         navigate('/admin/dashboard')
       } else {
         navigate('/student/dashboard')
       }
     } catch (err) {
-      setError(err.response?.data?.detail || '登录失败，请检查用户名和密码')
+      setError(err.response?.data?.detail || '登录失败，请检查账号信息')
     } finally {
       setLoading(false)
     }
@@ -77,17 +77,23 @@ export default function LoginPage() {
                 required
               />
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">密码</label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all"
-                placeholder="请输入密码"
-                required
-              />
-            </div>
+            {role === 'admin' ? (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">密码</label>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all"
+                  placeholder="请输入管理员密码"
+                  required
+                />
+              </div>
+            ) : (
+              <div className="rounded-lg bg-indigo-50 px-4 py-3 text-sm text-indigo-700">
+                学员使用导入时的中文姓名即可登录，无需密码。
+              </div>
+            )}
             {error && (
               <div className="bg-red-50 text-red-600 text-sm px-4 py-2.5 rounded-lg">{error}</div>
             )}
@@ -101,26 +107,6 @@ export default function LoginPage() {
             </button>
           </form>
 
-          {/* Demo accounts */}
-          <div className="mt-6 pt-4 border-t border-gray-100">
-            <p className="text-xs text-gray-400 mb-2">演示账号</p>
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              <button
-                onClick={() => { setUsername('admin'); setPassword('admin123') }}
-                className="p-2 bg-gray-50 rounded-lg hover:bg-gray-100 text-left"
-              >
-                <div className="font-medium text-gray-700">管理员</div>
-                <div className="text-gray-400">admin / admin123</div>
-              </button>
-              <button
-                onClick={() => { setUsername('张三'); setPassword('123456') }}
-                className="p-2 bg-gray-50 rounded-lg hover:bg-gray-100 text-left"
-              >
-                <div className="font-medium text-gray-700">学员（姓名登录）</div>
-                <div className="text-gray-400">张三 / 123456</div>
-              </button>
-            </div>
-          </div>
         </div>
       </div>
     </div>

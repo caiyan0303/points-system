@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import api from '../../api'
 import AppLayout from '../../components/AppLayout'
 import Toast from '../../components/Toast'
-import { Plus, X, Edit, Package, Clock, Eye, Power, Upload } from 'lucide-react'
+import { Plus, X, Edit, Package, Clock, Power, Upload, Loader2 } from 'lucide-react'
 
 const PRODUCT_STATUS = {
   '可兑换': 'bg-green-50 text-green-600',
@@ -12,7 +12,14 @@ const PRODUCT_STATUS = {
   '暂时下架': 'bg-gray-200 text-gray-600',
   '补货中': 'bg-blue-50 text-blue-600',
 }
-const STATUS_LABEL = PRODUCT_STATUS  // 中文status就是label
+const STATUS_LABEL = {
+  '可兑换': '可兑换',
+  '未上架': '未上架',
+  '已售罄': '已售罄',
+  '即将售罄': '即将售罄',
+  '暂时下架': '暂时下架',
+  '补货中': '补货中',
+}
 
 export default function AdminProducts() {
   const [products, setProducts] = useState([])
@@ -20,6 +27,7 @@ export default function AdminProducts() {
   const [error, setError] = useState(null)
   const [toast, setToast] = useState(null)
   const [modal, setModal] = useState(null)
+  const [uploading, setUploading] = useState(false)
   const [form, setForm] = useState({
     name: '', description: '', image_url: '', points_required: '', total_stock: '',
     on_site_stock: '0', limit_per_person: '', is_limited: false,
@@ -54,12 +62,27 @@ export default function AdminProducts() {
 
   const handleSave = async () => {
     try {
+      const pointsRequired = Number(form.points_required)
+      const totalStock = Number(form.total_stock)
+      const onSiteStock = Number(form.on_site_stock || 0)
+      const limitPerPerson = form.is_limited ? Number(form.limit_per_person) : null
+      if (!form.name.trim()) return showToast('请输入商品名称', 'error')
+      if (!Number.isInteger(pointsRequired) || pointsRequired <= 0) return showToast('所需积分必须为正整数', 'error')
+      if (!Number.isInteger(totalStock) || totalStock < 0) return showToast('总库存不能小于 0', 'error')
+      if (!Number.isInteger(onSiteStock) || onSiteStock < 0 || onSiteStock > totalStock) return showToast('现场库存需在 0 到总库存之间', 'error')
+      if (form.is_limited && (!Number.isInteger(limitPerPerson) || limitPerPerson <= 0)) return showToast('请输入有效的限兑次数', 'error')
+
       const payload = {
-        ...form,
-        points_required: parseInt(form.points_required),
-        total_stock: parseInt(form.total_stock),
-        on_site_stock: parseInt(form.on_site_stock),
-        limit_per_person: form.is_limited ? parseInt(form.limit_per_person) : null,
+        name: form.name.trim(),
+        description: form.description || null,
+        image_url: form.image_url || null,
+        points_required: pointsRequired,
+        total_stock: totalStock,
+        on_site_stock: onSiteStock,
+        limit_per_person: limitPerPerson,
+        is_limited: form.is_limited ? 1 : 0,
+        on_sale_time: form.on_sale_time || null,
+        off_sale_time: form.off_sale_time || null,
       }
       if (modal === 'create') {
         await api.post('/api/admin/products', payload)
@@ -75,11 +98,35 @@ export default function AdminProducts() {
 
   const toggleStatus = async (p) => {
     try {
-      const newStatus = p.product_status === 'active' ? 'offline' : 'active'
+      const newStatus = p.product_status === '可兑换' ? '暂时下架' : '可兑换'
       await api.put(`/api/admin/products/${p.id}`, { product_status: newStatus })
-      showToast(`商品已${newStatus === 'active' ? '上架' : '下架'}`)
+      showToast(`商品已${newStatus === '可兑换' ? '上架' : '下架'}`)
       fetchProducts()
-    } catch (err) { showToast('操作失败', 'error') }
+    } catch (err) { showToast(err.response?.data?.detail || '操作失败', 'error') }
+  }
+
+  const handleImageUpload = async (file) => {
+    if (!file) return
+    if (!['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(file.type)) {
+      showToast('仅支持 JPG、PNG、WebP 或 GIF 图片', 'error')
+      return
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      showToast('图片不能超过 5MB', 'error')
+      return
+    }
+    const data = new FormData()
+    data.append('file', file)
+    setUploading(true)
+    try {
+      const { data: result } = await api.post('/api/admin/products/upload-image', data)
+      setForm(current => ({ ...current, image_url: result.image_url }))
+      showToast('图片上传成功')
+    } catch (err) {
+      showToast(err.response?.data?.detail || '图片上传失败', 'error')
+    } finally {
+      setUploading(false)
+    }
   }
 
   return (
@@ -149,7 +196,7 @@ export default function AdminProducts() {
                   <Edit className="w-3 h-3" />
                 </button>
                 <button onClick={() => toggleStatus(p)} className={`px-3 py-1.5 text-xs rounded-lg ${
-                  p.product_status === 'active' ? 'bg-red-50 text-red-500 hover:bg-red-100' : 'bg-green-50 text-green-600 hover:bg-green-100'
+                  p.product_status === '可兑换' ? 'bg-red-50 text-red-500 hover:bg-red-100' : 'bg-green-50 text-green-600 hover:bg-green-100'
                 }`}>
                   <Power className="w-3 h-3" />
                 </button>
@@ -183,30 +230,9 @@ export default function AdminProducts() {
                   <div className="flex-1">
                     <input type="text" value={form.image_url || ''} onChange={(e) => setForm({...form, image_url: e.target.value})} placeholder="输入图片链接..." className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500" />
                   </div>
-                  <label className="flex items-center gap-1 px-3 py-2 text-xs border border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-indigo-400 hover:text-indigo-600 text-gray-500">
-                    <Upload className="w-3 h-3" /> 本地上传
-                    <input type="file" accept="image/*" onChange={(e) => {
-                      const file = e.target.files?.[0]; if (!file) return
-                      if (file.size > 3 * 1024 * 1024) { alert('图片不能超过3MB'); return }
-                      // 压缩图片到 max 800px
-                      const img = new Image()
-                      const reader = new FileReader()
-                      reader.onload = (ev) => {
-                        img.src = ev.target.result
-                        img.onload = () => {
-                          const canvas = document.createElement('canvas')
-                          const maxW = 800, maxH = 600
-                          let { width, height } = img
-                          if (width > maxW) { height = height * maxW / width; width = maxW }
-                          if (height > maxH) { width = width * maxH / height; height = maxH }
-                          canvas.width = width; canvas.height = height
-                          canvas.getContext('2d').drawImage(img, 0, 0, width, height)
-                          const compressed = canvas.toDataURL('image/jpeg', 0.7)
-                          setForm({...form, image_url: compressed})
-                        }
-                      }
-                      reader.readAsDataURL(file)
-                    }} className="hidden" />
+                  <label className={`flex items-center gap-1 px-3 py-2 text-xs border border-dashed rounded-lg text-gray-500 ${uploading ? 'border-gray-200 cursor-wait opacity-60' : 'border-gray-300 cursor-pointer hover:border-indigo-400 hover:text-indigo-600'}`}>
+                    {uploading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />} {uploading ? '上传中' : '本地上传'}
+                    <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" disabled={uploading} onChange={(e) => handleImageUpload(e.target.files?.[0])} className="hidden" />
                   </label>
                 </div>
                 {form.image_url && (
@@ -251,7 +277,7 @@ export default function AdminProducts() {
             </div>
             <div className="flex gap-3 mt-6">
               <button onClick={() => setModal(null)} className="flex-1 py-2.5 text-sm font-medium border border-gray-200 rounded-lg hover:bg-gray-50">取消</button>
-              <button onClick={handleSave} className="flex-1 py-2.5 text-sm font-medium bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">保存</button>
+              <button onClick={handleSave} disabled={uploading} className="flex-1 py-2.5 text-sm font-medium bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed">保存</button>
             </div>
           </div>
         </div>

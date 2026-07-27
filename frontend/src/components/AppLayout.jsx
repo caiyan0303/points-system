@@ -10,10 +10,10 @@ import {
 
 const adminGroups = [
   {
-    key: 'overview', label: '总览', icon: Star,
+    key: 'overview', label: '项目运营', icon: Star,
     items: [
       { path: '/admin/dashboard', icon: LayoutDashboard, label: '仪表盘' },
-      { path: '/admin/projects', icon: Layers, label: '项目管理' },
+      { path: '/admin/projects', icon: Layers, label: '项目与阶段' },
     ]
   },
   {
@@ -21,12 +21,6 @@ const adminGroups = [
     items: [
       { path: '/admin/students', icon: User, label: '学员管理' },
       { path: '/admin/groups', icon: UsersRound, label: '小组管理' },
-    ]
-  },
-  {
-    key: 'phase', label: '阶段管理', icon: Layers,
-    items: [
-      { path: '/admin/phases', icon: Layers, label: '阶段管理' },
     ]
   },
   {
@@ -48,7 +42,7 @@ const adminGroups = [
   {
     key: 'system', label: '系统', icon: FileText,
     items: [
-      { path: '/admin/yearly', icon: Calendar, label: '年度积分' },
+      { path: '/admin/yearly', icon: Calendar, label: '年度数据汇总' },
       { path: '/admin/operation-logs', icon: FileText, label: '操作记录' },
     ]
   },

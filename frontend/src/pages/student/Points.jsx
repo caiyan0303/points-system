@@ -5,8 +5,9 @@ import Pagination from '../../components/Pagination'
 import { TrendingUp, ShoppingBag, Award } from 'lucide-react'
 
 const CATEGORIES = [
-  '课程学习完成', '作业提交质量', '案例沟通表现', '案例输出成果',
-  '线下课参与', '团队协作贡献', '知识分享输出', '特殊贡献奖励', '其它积分'
+  '线上学习', '线上考试', '学习输出', '问卷反馈', '线下出勤',
+  '课堂互动', '课堂任务', '实践任务', '成果转化', '团队共创', '团队贡献',
+  '小组长职责', '项目贡献', '特殊调整'
 ]
 
 export default function StudentPoints() {

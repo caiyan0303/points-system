@@ -1,18 +1,21 @@
 """管理员端 — 全部接口"""
+import json
 import math
 from typing import List, Optional
 from datetime import datetime, timezone, timedelta
+from pathlib import Path
+from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Body
+from fastapi import APIRouter, Depends, HTTPException, Query, Body, File, UploadFile
 from sqlalchemy.orm import Session
-from sqlalchemy import func, or_
+from sqlalchemy import func, or_, select
 
 from database import get_db
 from models import (
-    User, AcademicYear, TrainingProject, Group, GroupMember,
+    User, AcademicYear, TrainingProject, Group, GroupMember, ProjectEnrollment,
     Phase, PhaseParticipant, PhaseGroup,
     Point, PointRule, RuleText, Product, Redemption, PrizeAward,
-    OperationLog,
+    OperationLog, Notification,
     UserRole, EmploymentStatus, AccountStatus,
     YearStatus, ProjectStatus, GroupStatus, PhaseStatus,
     PointDataSource, PointStatus, ProductStatus, RedemptionStatus,
@@ -26,7 +29,7 @@ from schemas import (
     PhaseCreate, PhaseUpdate, PhaseOut, PhaseDetail,
     PhaseRanking, GroupRanking, ExcellentSelect,
     PointCreate, PointBatchCreate, PointImportPreview, PointImportRequest,
-    PointRevoke, PointRecordOut,
+    PointRecordOut,
     PointRuleCreate, PointRuleOut,
     ProductCreate, ProductUpdate, ProductOut,
     RedemptionCreate, RedemptionProcess, RedemptionOut,
@@ -80,6 +83,7 @@ def _compute_student_points(db: Session, student_id: int, year_id: Optional[int]
             RedemptionStatus.SHIPPED.value,
             RedemptionStatus.PENDING_PICKUP.value,
             RedemptionStatus.RECEIVED.value,
+            RedemptionStatus.COMPLETED.value,
         ]),
     ).scalar() or 0
     frozen = db.query(func.coalesce(func.sum(Redemption.points_spent), 0)).filter(
@@ -141,6 +145,7 @@ def dashboard(
     current_user: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
+    _sync_phase_statuses(db)
     total_students = db.query(func.count(User.id)).filter(User.role == UserRole.STUDENT.value).scalar() or 0
     active_students = db.query(func.count(User.id)).filter(
         User.role == UserRole.STUDENT.value,
@@ -183,7 +188,7 @@ def dashboard(
         Redemption.status == RedemptionStatus.PENDING.value,
     ).scalar() or 0
     completed_redemptions = db.query(func.count(Redemption.id)).filter(
-        Redemption.status == RedemptionStatus.RECEIVED.value,
+        Redemption.status.in_([RedemptionStatus.RECEIVED.value, RedemptionStatus.COMPLETED.value]),
     ).scalar() or 0
     low_stock_products = db.query(func.count(Product.id)).filter(
         Product.product_status == ProductStatus.LOW_STOCK.value,
@@ -228,6 +233,173 @@ def dashboard(
     )
 
 
+@router.get("/export/all-data")
+def export_all_data(
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """返回适合生成多工作表 Excel 的全部业务数据（不包含密码哈希）。"""
+    def display(value):
+        if value is None:
+            return ""
+        if isinstance(value, datetime):
+            return value.isoformat(sep=" ", timespec="seconds")
+        if isinstance(value, (dict, list)):
+            return json.dumps(value, ensure_ascii=False)
+        return value
+
+    def yes_no(value):
+        return "是" if value else "否"
+
+    years = db.query(AcademicYear).order_by(AcademicYear.id).all()
+    projects = db.query(TrainingProject).order_by(TrainingProject.id).all()
+    phases = db.query(Phase).order_by(Phase.id).all()
+    students = db.query(User).filter(User.role == UserRole.STUDENT.value).order_by(User.id).all()
+    groups = db.query(Group).order_by(Group.id).all()
+    products = db.query(Product).order_by(Product.id).all()
+
+    year_names = {item.id: item.name for item in years}
+    project_names = {item.id: item.name for item in projects}
+    phase_names = {item.id: item.name for item in phases}
+    student_names = {item.id: item.real_name for item in students}
+    group_names = {item.id: item.name for item in groups}
+    product_names = {item.id: item.name for item in products}
+    user_names = {item.id: item.real_name or item.username for item in db.query(User).all()}
+
+    sheets = []
+    def add_sheet(name, rows):
+        sheets.append({"name": name, "rows": rows})
+
+    add_sheet("导出说明", [
+        {"项目": "导出时间", "内容": datetime.now().isoformat(sep=" ", timespec="seconds")},
+        {"项目": "导出人", "内容": current_user.real_name or current_user.username},
+        {"项目": "数据范围", "内容": "积分商城全部业务数据；不包含管理员或学员密码哈希"},
+        {"项目": "工作表数量", "内容": 18},
+    ])
+    add_sheet("年度", [{
+        "年度ID": item.id, "年度名称": item.name, "状态": item.status, "创建时间": display(item.created_at),
+    } for item in years])
+    add_sheet("培训项目", [{
+        "项目ID": item.id, "年度": year_names.get(item.year_id, ""), "项目名称": item.name,
+        "开始时间": display(item.start_date), "结束时间": display(item.end_date),
+        "状态": item.status, "项目说明": item.description or "", "创建时间": display(item.created_at),
+    } for item in projects])
+    add_sheet("项目阶段", [{
+        "阶段ID": item.id, "年度": year_names.get(item.year_id, ""), "培训项目": project_names.get(item.project_id, ""),
+        "阶段名称": item.name, "开始时间": display(item.start_date), "结束时间": display(item.end_date),
+        "状态": item.status, "允许排名": yes_no(item.allow_ranking), "允许评优": yes_no(item.allow_excellent),
+        "优秀人数": item.excellent_count, "奖项说明": item.prize_description or "",
+        "阶段说明": item.description or "", "创建时间": display(item.created_at),
+    } for item in phases])
+    add_sheet("学员", [{
+        "学员ID": item.id, "姓名": item.real_name, "登录账号": item.username,
+        "年度": year_names.get(item.year_id, ""), "培训项目": project_names.get(item.project_id, ""),
+        "体系": item.system or "", "一级部门": item.level1_dept or "", "邮箱": item.email or "",
+        "手机": item.phone or "", "收货地址": item.address or "", "在职状态": item.employment_status,
+        "账号状态": item.account_status, "是否启用": yes_no(item.is_active), "创建时间": display(item.created_at),
+    } for item in students])
+
+    enrollments = db.query(ProjectEnrollment).order_by(ProjectEnrollment.id).all()
+    add_sheet("项目参与", [{
+        "记录ID": item.id, "学员": student_names.get(item.student_id, ""), "年度": year_names.get(item.year_id, ""),
+        "培训项目": project_names.get(item.project_id, ""), "所属小组": group_names.get(item.group_id, "未分组") if item.group_id else "未分组",
+        "状态": item.status, "参与标记": item.label or "", "备注": item.remark or "", "加入时间": display(item.joined_at),
+    } for item in enrollments])
+    add_sheet("小组", [{
+        "小组ID": item.id, "小组名称": item.name, "年度": year_names.get(item.year_id, ""),
+        "培训项目": project_names.get(item.project_id, ""), "状态": item.status, "创建时间": display(item.created_at),
+    } for item in groups])
+
+    group_members = db.query(GroupMember).order_by(GroupMember.id).all()
+    add_sheet("小组成员", [{
+        "记录ID": item.id, "小组": group_names.get(item.group_id, ""), "学员": student_names.get(item.student_id, ""),
+        "组内角色": item.role or "成员", "加入时间": display(item.created_at),
+    } for item in group_members])
+
+    phase_participants = db.query(PhaseParticipant).order_by(PhaseParticipant.id).all()
+    add_sheet("阶段参与成员", [{
+        "记录ID": item.id, "阶段": phase_names.get(item.phase_id, ""), "学员": student_names.get(item.student_id, ""),
+        "所属小组": group_names.get(item.group_id, "未分组") if item.group_id else "未分组",
+        "是否优秀": yes_no(item.is_excellent), "奖品已发放": yes_no(item.prize_given), "创建时间": display(item.created_at),
+    } for item in phase_participants])
+
+    phase_groups = db.query(PhaseGroup).order_by(PhaseGroup.id).all()
+    add_sheet("阶段参与小组", [{
+        "记录ID": item.id, "阶段": phase_names.get(item.phase_id, ""), "小组": group_names.get(item.group_id, ""),
+        "创建时间": display(item.created_at),
+    } for item in phase_groups])
+
+    points = db.query(Point).order_by(Point.id).all()
+    add_sheet("积分流水", [{
+        "积分ID": item.id, "流水编号": item.record_number or "", "学员": student_names.get(item.student_id, ""),
+        "年度": year_names.get(item.year_id, ""), "培训项目": project_names.get(item.project_id, ""),
+        "所属阶段": phase_names.get(item.phase_id, ""), "所属小组": group_names.get(item.group_id, "未分组") if item.group_id else "未分组",
+        "积分": item.points, "积分分类": item.category, "说明": item.description or "", "数据来源": item.data_source,
+        "状态": item.status, "撤销原因": item.revoke_reason or "", "获得时间": display(item.obtained_date),
+        "录入管理员": user_names.get(item.admin_id, ""), "创建时间": display(item.created_at),
+    } for item in points])
+
+    point_rules = db.query(PointRule).order_by(PointRule.id).all()
+    add_sheet("积分规则", [{
+        "规则ID": item.id, "积分分类": item.category, "规则名称": item.rule_name,
+        "默认积分": item.default_points, "最高积分": item.max_points,
+        "适用项目": display(item.applicable_projects), "适用阶段": display(item.applicable_phases),
+        "允许重复": yes_no(item.allow_repeat), "计入本期积分": yes_no(item.count_in_period),
+        "计入可用积分": yes_no(item.count_in_available), "需要审批": yes_no(item.need_approval),
+        "说明": item.description or "", "创建时间": display(item.created_at),
+    } for item in point_rules])
+
+    rule_texts = db.query(RuleText).order_by(RuleText.id).all()
+    add_sheet("规则说明", [{
+        "记录ID": item.id, "标题": item.title, "内容": item.content, "更新时间": display(item.updated_at),
+    } for item in rule_texts])
+    add_sheet("商品", [{
+        "商品ID": item.id, "商品名称": item.name, "兑换积分": item.points_required,
+        "总库存": item.total_stock, "可用库存": item.available_stock, "锁定库存": item.locked_stock,
+        "现场库存": item.on_site_stock, "每人限兑": item.limit_per_person or "", "是否限量": yes_no(item.is_limited),
+        "上架时间": display(item.on_sale_time), "下架时间": display(item.off_sale_time), "商品状态": item.product_status,
+        "图片地址": item.image_url or "", "商品说明": item.description or "", "创建时间": display(item.created_at),
+    } for item in products])
+
+    redemptions = db.query(Redemption).order_by(Redemption.id).all()
+    add_sheet("兑换记录", [{
+        "兑换ID": item.id, "学员": student_names.get(item.student_id, ""), "商品": product_names.get(item.product_id, ""),
+        "消耗积分": item.points_spent, "状态": item.status, "领取方式": item.pickup_method or "",
+        "快递公司": item.express_company or "", "快递单号": item.tracking_number or "",
+        "拒绝原因": item.reject_reason or "", "地址快照": display(item.address_snapshot), "备注": item.remark or "",
+        "锁定时间": display(item.locked_at), "审核时间": display(item.approved_at), "发货时间": display(item.shipped_at),
+        "领取时间": display(item.received_at), "申请时间": display(item.created_at), "更新时间": display(item.updated_at),
+    } for item in redemptions])
+
+    awards = db.query(PrizeAward).order_by(PrizeAward.id).all()
+    add_sheet("奖励发放", [{
+        "奖励ID": item.id, "学员": student_names.get(item.student_id, ""), "商品": product_names.get(item.product_id, ""),
+        "阶段": phase_names.get(item.phase_id, ""), "小组": group_names.get(item.group_id, ""),
+        "奖励类型": item.award_type, "扣减积分": item.points_deducted, "说明": item.description or "",
+        "发放管理员": user_names.get(item.created_by, ""), "发放时间": display(item.created_at),
+    } for item in awards])
+
+    logs = db.query(OperationLog).order_by(OperationLog.id).all()
+    add_sheet("操作日志", [{
+        "日志ID": item.id, "管理员": user_names.get(item.admin_id, ""), "操作": item.action,
+        "对象类型": item.target_type or "", "对象ID": item.target_id or "", "操作详情": item.detail or "",
+        "操作时间": display(item.created_at),
+    } for item in logs])
+
+    notifications = db.query(Notification).order_by(Notification.id).all()
+    add_sheet("通知", [{
+        "通知ID": item.id, "接收人": user_names.get(item.user_id, ""), "标题": item.title,
+        "内容": item.content, "是否已读": yes_no(item.is_read), "创建时间": display(item.created_at),
+    } for item in notifications])
+
+    _log_operation(db, current_user.id, "导出全部数据", "system", None, "导出全部业务数据为 Excel")
+    db.commit()
+    return {
+        "filename": f"积分商城全部数据_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+        "sheets": sheets,
+    }
+
+
 # ═══════════════ Students ═══════════════
 
 @router.get("/students", response_model=PaginatedResponse)
@@ -252,12 +424,20 @@ def list_students(
                 User.real_name.contains(keyword),
                 User.email.contains(keyword),
                 User.department.contains(keyword),
+                User.system.contains(keyword),
+                User.level1_dept.contains(keyword),
             )
         )
     if year_id:
-        q = q.filter(User.year_id == year_id)
+        enrolled_student_ids = select(ProjectEnrollment.student_id).where(
+            ProjectEnrollment.year_id == year_id
+        )
+        q = q.filter(User.id.in_(enrolled_student_ids))
     if project_id:
-        q = q.filter(User.project_id == project_id)
+        enrolled_student_ids = select(ProjectEnrollment.student_id).where(
+            ProjectEnrollment.project_id == project_id
+        )
+        q = q.filter(User.id.in_(enrolled_student_ids))
     if employment_status:
         q = q.filter(User.employment_status == employment_status)
     if account_status:
@@ -271,21 +451,48 @@ def list_students(
 
     items = []
     for s in students:
-        year_name = db.query(AcademicYear.name).filter(AcademicYear.id == s.year_id).scalar() if s.year_id else None
-        project_name = db.query(TrainingProject.name).filter(TrainingProject.id == s.project_id).scalar() if s.project_id else None
-        gm = db.query(GroupMember).filter(GroupMember.student_id == s.id).first()
-        group_name = None
-        if gm:
-            g = db.query(Group).filter(Group.id == gm.group_id).first()
-            if g:
-                group_name = g.name
-        period_pts, total_earned, available = _compute_student_points(db, s.id, s.year_id, s.project_id)
+        context_enrollment = None
+        if project_id:
+            context_enrollment = db.query(ProjectEnrollment).filter(
+                ProjectEnrollment.student_id == s.id,
+                ProjectEnrollment.project_id == project_id,
+            ).first()
+        elif year_id:
+            context_enrollment = db.query(ProjectEnrollment).filter(
+                ProjectEnrollment.student_id == s.id,
+                ProjectEnrollment.year_id == year_id,
+            ).order_by(ProjectEnrollment.id.desc()).first()
+
+        resolved_year_id = context_enrollment.year_id if context_enrollment else s.year_id
+        resolved_project_id = context_enrollment.project_id if context_enrollment else s.project_id
+        year_name = db.query(AcademicYear.name).filter(AcademicYear.id == resolved_year_id).scalar() if resolved_year_id else None
+        project_name = db.query(TrainingProject.name).filter(TrainingProject.id == resolved_project_id).scalar() if resolved_project_id else None
+
+        group = None
+        if group_id:
+            group = db.query(Group).filter(Group.id == group_id).first()
+        elif context_enrollment and context_enrollment.group_id:
+            group = db.query(Group).filter(Group.id == context_enrollment.group_id).first()
+        elif resolved_project_id:
+            group = db.query(Group).join(
+                GroupMember, GroupMember.group_id == Group.id
+            ).filter(
+                GroupMember.student_id == s.id,
+                Group.project_id == resolved_project_id,
+            ).first()
+
+        resolved_group_id = group.id if group else None
+        group_name = group.name if group else None
+        period_pts, total_earned, available = _compute_student_points(
+            db, s.id, resolved_year_id, resolved_project_id
+        )
         items.append(StudentBrief(
             id=s.id, username=s.username, real_name=s.real_name,
             email=s.email, phone=s.phone, address=s.address, department=s.department,
             system=s.system, level1_dept=s.level1_dept,
-            year_id=s.year_id, project_id=s.project_id,
-            year_name=year_name, project_name=project_name, group_name=group_name,
+            year_id=resolved_year_id, project_id=resolved_project_id,
+            year_name=year_name, project_name=project_name,
+            group_id=resolved_group_id, group_name=group_name,
             employment_status=s.employment_status, account_status=s.account_status,
             period_points=period_pts, total_earned=total_earned, available_points=available,
             created_at=s.created_at,
@@ -304,13 +511,13 @@ def create_student(
     current_user: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    # 用真名生成用户名，若重复则加数字后缀
-    base_username = data.real_name
-    username = base_username
-    counter = 1
-    while db.query(User).filter(User.username == username).first():
-        username = f"{base_username}{counter}"
-        counter += 1
+    # 学员姓名即登录账号，不生成数字后缀。
+    username = data.real_name.strip()
+    if not username:
+        raise HTTPException(status_code=400, detail="姓名不能为空")
+    existing_username = db.query(User).filter(User.username == username).first()
+    if existing_username:
+        raise HTTPException(status_code=400, detail=f"学员“{username}”已存在，请勿重复创建")
 
     if data.email:
         existing_email = db.query(User).filter(User.email == data.email).first()
@@ -321,20 +528,50 @@ def create_student(
         year = db.query(AcademicYear).filter(AcademicYear.id == data.year_id).first()
         if not year:
             raise HTTPException(status_code=400, detail="所选年度不存在")
+    project = None
     if data.project_id:
         project = db.query(TrainingProject).filter(TrainingProject.id == data.project_id).first()
         if not project:
             raise HTTPException(status_code=400, detail="所选项目不存在")
+    selected_group = None
+    if data.group_id:
+        if not data.project_id:
+            raise HTTPException(status_code=400, detail="请先选择培训项目，再选择所属小组")
+        selected_group = db.query(Group).filter(
+            Group.id == data.group_id,
+            Group.project_id == data.project_id,
+        ).first()
+        if not selected_group:
+            raise HTTPException(status_code=400, detail="所选小组不存在或不属于该培训项目")
+    elif data.group_name and data.group_name.strip():
+        if not project:
+            raise HTTPException(status_code=400, detail="请先选择培训项目，再填写所属小组")
+        group_name = data.group_name.strip()
+        selected_group = db.query(Group).filter(
+            Group.name == group_name,
+            Group.project_id == project.id,
+        ).first()
+        if not selected_group:
+            selected_group = Group(
+                name=group_name,
+                year_id=project.year_id,
+                project_id=project.id,
+                status=GroupStatus.ACTIVE.value,
+            )
+            db.add(selected_group)
+            db.flush()
 
     user = User(
         username=username,
-        password_hash=hash_password(data.password),
+        password_hash=hash_password(uuid4().hex),
         role=UserRole.STUDENT.value,
         real_name=data.real_name,
         email=data.email,
         phone=data.phone,
         address=data.address,
         department=data.department,
+        system=data.system,
+        level1_dept=data.level1_dept,
         year_id=data.year_id,
         project_id=data.project_id,
         employment_status=data.employment_status,
@@ -342,6 +579,17 @@ def create_student(
     )
     db.add(user)
     db.flush()
+    if data.year_id and data.project_id:
+        db.add(ProjectEnrollment(
+            student_id=user.id,
+            year_id=data.year_id,
+            project_id=data.project_id,
+            group_id=selected_group.id if selected_group else None,
+            status="在读",
+            label="首次参加",
+        ))
+    if selected_group:
+        db.add(GroupMember(group_id=selected_group.id, student_id=user.id))
 
     _log_operation(db, current_user.id, "创建学员", "student", user.id, f"创建学员 {data.real_name}({username})")
     db.commit()
@@ -365,25 +613,102 @@ def update_student(
         if existing:
             raise HTTPException(status_code=400, detail="该邮箱已被其他用户使用")
 
-    # 处理 group_id 变更
+    # 处理小组变更：既支持选择现有小组，也支持输入名称自动创建。
     new_group_id = None
     updates = data.model_dump(exclude_unset=True)
+    group_change_requested = "group_id" in updates or "group_name" in updates
     if "group_id" in updates:
         new_group_id = updates.pop("group_id")
+    new_group_name = str(updates.pop("group_name", "") or "").strip()
+
+    if "real_name" in updates:
+        new_real_name = str(updates["real_name"] or "").strip()
+        if not new_real_name:
+            raise HTTPException(status_code=400, detail="姓名不能为空")
+        username_owner = db.query(User).filter(
+            User.username == new_real_name,
+            User.id != student_id,
+        ).first()
+        if username_owner:
+            raise HTTPException(status_code=400, detail=f"登录账号“{new_real_name}”已存在")
+        updates["real_name"] = new_real_name
+        student.username = new_real_name
 
     for key, val in updates.items():
         setattr(student, key, val)
 
+    if student.project_id:
+        project = db.query(TrainingProject).filter(TrainingProject.id == student.project_id).first()
+        if not project:
+            raise HTTPException(status_code=400, detail="所选项目不存在")
+        conflicting_enrollment = db.query(ProjectEnrollment).filter(
+            ProjectEnrollment.student_id == student.id,
+            ProjectEnrollment.year_id == project.year_id,
+            ProjectEnrollment.project_id != project.id,
+        ).first()
+        if conflicting_enrollment:
+            existing_project_name = db.query(TrainingProject.name).filter(
+                TrainingProject.id == conflicting_enrollment.project_id
+            ).scalar() or "其他项目"
+            raise HTTPException(
+                status_code=400,
+                detail=f"该学员本年度已参加“{existing_project_name}”，不能同时加入两个项目",
+            )
+        student.year_id = project.year_id
+        enrollment = db.query(ProjectEnrollment).filter(
+            ProjectEnrollment.student_id == student.id,
+            ProjectEnrollment.project_id == project.id,
+        ).first()
+        if not enrollment:
+            prior_count = db.query(ProjectEnrollment).filter(ProjectEnrollment.student_id == student.id).count()
+            enrollment = ProjectEnrollment(
+                student_id=student.id,
+                year_id=project.year_id,
+                project_id=project.id,
+                status="在读",
+                label="再次入选" if prior_count else "首次参加",
+            )
+            db.add(enrollment)
+
+    if group_change_requested and new_group_name:
+        if not student.project_id:
+            raise HTTPException(status_code=400, detail="请先选择培训项目，再填写所属小组")
+        group = db.query(Group).filter(
+            Group.name == new_group_name,
+            Group.project_id == student.project_id,
+        ).first()
+        if not group:
+            project = db.query(TrainingProject).filter(TrainingProject.id == student.project_id).first()
+            group = Group(
+                name=new_group_name,
+                year_id=project.year_id,
+                project_id=project.id,
+                status=GroupStatus.ACTIVE.value,
+            )
+            db.add(group)
+            db.flush()
+        new_group_id = group.id
+
     # 更新小组成员关系
-    if new_group_id is not None:
-        # 移除旧的成员关系
-        db.query(GroupMember).filter(GroupMember.student_id == student_id).delete()
-        if new_group_id > 0:
-            group = db.query(Group).filter(Group.id == new_group_id).first()
+    if group_change_requested:
+        project_group_ids = db.query(Group.id).filter(Group.project_id == student.project_id)
+        db.query(GroupMember).filter(
+            GroupMember.student_id == student_id,
+            GroupMember.group_id.in_(project_group_ids),
+        ).delete(synchronize_session=False)
+        if new_group_id and new_group_id > 0:
+            group = db.query(Group).filter(Group.id == new_group_id, Group.project_id == student.project_id).first()
             if not group:
-                raise HTTPException(status_code=404, detail="小组不存在")
+                raise HTTPException(status_code=404, detail="小组不存在或不属于所选项目")
             gm = GroupMember(group_id=new_group_id, student_id=student_id)
             db.add(gm)
+        if student.project_id:
+            enrollment = db.query(ProjectEnrollment).filter(
+                ProjectEnrollment.student_id == student.id,
+                ProjectEnrollment.project_id == student.project_id,
+            ).first()
+            if enrollment:
+                enrollment.group_id = new_group_id if new_group_id and new_group_id > 0 else None
 
     _log_operation(db, current_user.id, "更新学员", "student", student_id, f"更新学员 {student.real_name}")
     db.commit()
@@ -483,19 +808,132 @@ def batch_import_students(
 
     # 字段名归一化：支持中英文键名
     field_map = {
-        '姓名': 'real_name', '邮箱': 'email', '手机': 'phone', '地址': 'address',
+        '姓名': 'real_name', '邮箱': 'email', '手机': 'phone',
+        '地址': 'address', '收货地址': 'address',
         '部门': 'department', '体系': 'system', '一级部门': 'level1_dept',
         '所属年度': 'year_name', '培训项目': 'project_name', '所属小组': 'group_name',
+        '项目标注': 'enrollment_label', '备注': 'enrollment_remark',
         '在职状态': 'employment_status', '账号状态': 'account_status',
-        '密码': 'password',
     }
     normalized_rows = []
     for r in rows:
         new_r = {}
         for k, v in r.items():
-            new_r[field_map.get(k, k)] = v
+            clean_key = str(k).replace("\ufeff", "").strip()
+            clean_value = v.strip() if isinstance(v, str) else v
+            new_r[field_map.get(clean_key, clean_key)] = clean_value
         normalized_rows.append(new_r)
     rows = normalized_rows
+
+    # 先解析并校验年度、项目和小组，任何一行无法匹配时整批停止，
+    # 避免学员已创建但三个所属关系悄悄丢失。
+    years = db.query(AcademicYear).all()
+
+    def year_key(value):
+        return str(value or "").replace("年度", "").replace("年", "").strip()
+
+    def project_key(value):
+        normalized = str(value or "").replace(" ", "").strip()
+        for item in years:
+            number = year_key(item.name)
+            for prefix in (f"{number}年度", f"{number}年", number):
+                if prefix and normalized.startswith(prefix):
+                    return normalized[len(prefix):]
+        return normalized
+
+    relation_errors = []
+    for row_number, row in enumerate(rows, start=1):
+        year_name = row.get("year_name")
+        project_name = row.get("project_name")
+        group_name = row.get("group_name")
+
+        year = None
+        if year_name:
+            matched_years = [item for item in years if year_key(item.name) == year_key(year_name)]
+            if len(matched_years) != 1:
+                relation_errors.append(f"第{row_number}行未找到唯一年度“{year_name}”")
+            else:
+                year = matched_years[0]
+
+        project = None
+        if project_name:
+            project_query = db.query(TrainingProject)
+            if year:
+                project_query = project_query.filter(TrainingProject.year_id == year.id)
+            matched_projects = [
+                item for item in project_query.all()
+                if project_key(item.name) == project_key(project_name)
+            ]
+            if len(matched_projects) != 1:
+                relation_errors.append(
+                    f"第{row_number}行未在指定年度找到唯一培训项目“{project_name}”"
+                )
+            else:
+                project = matched_projects[0]
+                year = year or db.query(AcademicYear).filter(AcademicYear.id == project.year_id).first()
+
+        group = None
+        if group_name:
+            group_query = db.query(Group).filter(Group.name == group_name)
+            if project:
+                group_query = group_query.filter(Group.project_id == project.id)
+            elif year:
+                group_query = group_query.filter(Group.year_id == year.id)
+            matched_groups = group_query.all()
+            if len(matched_groups) == 0 and project:
+                # 小组可以随学员名单首次导入，在已确认的年度和项目下自动建立。
+                row["_new_group_name"] = group_name
+            elif len(matched_groups) != 1:
+                relation_errors.append(
+                    f"第{row_number}行未在指定项目中找到唯一小组“{group_name}”"
+                )
+            else:
+                group = matched_groups[0]
+                if not project:
+                    project = db.query(TrainingProject).filter(TrainingProject.id == group.project_id).first()
+                if not year:
+                    year = db.query(AcademicYear).filter(AcademicYear.id == group.year_id).first()
+
+        row["_year_id"] = year.id if year else None
+        row["_project_id"] = project.id if project else None
+        row["_group_id"] = group.id if group else None
+
+    # 同一学员同一年度只能参加一个培训项目：同时检查数据库历史和本次文件内部。
+    import_assignments = {}
+    for row_number, row in enumerate(rows, start=1):
+        real_name = row.get("real_name")
+        year_id = row.get("_year_id")
+        project_id = row.get("_project_id")
+        if not real_name or not year_id or not project_id:
+            continue
+        assignment_key = (real_name, year_id)
+        prior_project_id = import_assignments.get(assignment_key)
+        if prior_project_id and prior_project_id != project_id:
+            relation_errors.append(f"第{row_number}行：{real_name}在同一年度不能参加两个培训项目")
+            continue
+        import_assignments[assignment_key] = project_id
+
+        existing_user = db.query(User).filter(
+            User.role == UserRole.STUDENT.value,
+            User.username == real_name,
+        ).first()
+        if not existing_user:
+            continue
+        conflicting_enrollment = db.query(ProjectEnrollment).filter(
+            ProjectEnrollment.student_id == existing_user.id,
+            ProjectEnrollment.year_id == year_id,
+            ProjectEnrollment.project_id != project_id,
+        ).first()
+        if conflicting_enrollment:
+            existing_project_name = db.query(TrainingProject.name).filter(
+                TrainingProject.id == conflicting_enrollment.project_id
+            ).scalar() or "其他项目"
+            relation_errors.append(
+                f"第{row_number}行：{real_name}本年度已参加“{existing_project_name}”，不能再加入其他项目"
+            )
+
+    if relation_errors:
+        raise HTTPException(status_code=400, detail="；".join(relation_errors[:10]))
 
     duplicate_emails = []
     missing_fields_rows = []
@@ -504,6 +942,12 @@ def batch_import_students(
 
     all_emails = db.query(User.email).filter(User.email.isnot(None)).all()
     existing_emails = {e[0] for e in all_emails if e[0]}
+    existing_students = db.query(User).filter(User.role == UserRole.STUDENT.value).all()
+    existing_users_by_name = {user.username: user for user in existing_students}
+    existing_names = set(existing_users_by_name)
+    existing_enrollment_keys = {
+        (item.student_id, item.project_id) for item in db.query(ProjectEnrollment).all()
+    }
 
     for i, row in enumerate(rows):
         email = row.get("email")
@@ -513,12 +957,23 @@ def batch_import_students(
         if email and email in existing_emails:
             duplicate_emails.append(email)
 
-    impl = _collect_projects_groups_from_rows(db, rows, invalid_projects, invalid_groups)
-
+    skipped_preview = sum(
+        1 for row in rows
+        if row.get("real_name") in existing_users_by_name
+        and row.get("_project_id")
+        and (
+            (
+                existing_users_by_name[row.get("real_name")].id,
+                row.get("_project_id"),
+            ) in existing_enrollment_keys
+            or existing_users_by_name[row.get("real_name")].project_id == row.get("_project_id")
+        )
+    )
     preview = BatchImportPreview(
         total_rows=len(rows),
-        new_count=len(rows),
-        update_count=0,
+        new_count=sum(1 for row in rows if row.get("real_name") not in existing_names),
+        update_count=sum(1 for row in rows if row.get("real_name") in existing_names) - skipped_preview,
+        skipped_count=skipped_preview,
         duplicate_emails=duplicate_emails,
         missing_fields=missing_fields_rows,
         invalid_projects=invalid_projects,
@@ -527,68 +982,169 @@ def batch_import_students(
 
     # 执行实际导入
     created = 0
+    updated = 0
+    skipped = 0
+    created_groups = {}
     for i, row in enumerate(rows):
         real_name = row.get("real_name")
         if not real_name:
             continue
         email = row.get("email")
-        if email and email in existing_emails:
-            continue
 
-        base_username = real_name
-        username = base_username
-        counter = 1
-        while db.query(User).filter(User.username == username).first():
-            username = f"{base_username}{counter}"
-            counter += 1
+        year_id = row.get("_year_id")
+        project_id = row.get("_project_id")
+        group_id = row.get("_group_id")
+        new_group_name = row.get("_new_group_name")
 
-        password = row.get("password", "123456")
-        project_name = row.get("project_name")
-        project_id = None
-        year_id = None
-        if project_name:
-            project = db.query(TrainingProject).filter(TrainingProject.name == project_name).first()
-            if project:
-                project_id = project.id
-                year_id = project.year_id
+        user = db.query(User).filter(
+            User.role == UserRole.STUDENT.value,
+            User.username == real_name,
+        ).first()
+        if user and project_id:
+            existing_enrollment = db.query(ProjectEnrollment).filter(
+                ProjectEnrollment.student_id == user.id,
+                ProjectEnrollment.project_id == project_id,
+            ).first()
+            if existing_enrollment or user.project_id == project_id:
+                skipped += 1
+                continue
 
-        group_name = row.get("group_name")
-        group_id = None
-        if group_name and project_id:
-            group = db.query(Group).filter(Group.name == group_name, Group.project_id == project_id).first()
-            if group:
-                group_id = group.id
+        if not group_id and new_group_name and project_id:
+            group_key = (project_id, new_group_name)
+            group = created_groups.get(group_key)
+            if not group:
+                group = db.query(Group).filter(
+                    Group.name == new_group_name,
+                    Group.project_id == project_id,
+                ).first()
+            if not group:
+                group = Group(name=new_group_name, year_id=year_id, project_id=project_id)
+                db.add(group)
+                db.flush()
+            created_groups[group_key] = group
+            group_id = group.id
 
-        user = User(
-            username=username,
-            password_hash=hash_password(password),
-            role=UserRole.STUDENT.value,
-            real_name=real_name,
-            email=email,
-            phone=row.get("phone"),
-            address=row.get("address"),
-            department=row.get("department"),
-            system=row.get("system"),
-            level1_dept=row.get("level1_dept"),
-            year_id=year_id,
-            project_id=project_id,
-            employment_status=EmploymentStatus.ACTIVE.value,
-            account_status=AccountStatus.ENABLED.value,
-        )
-        db.add(user)
-        db.flush()
+        if user:
+            user.real_name = real_name
+            user.email = email
+            user.phone = row.get("phone")
+            user.address = row.get("address")
+            user.department = row.get("department")
+            user.system = row.get("system")
+            user.level1_dept = row.get("level1_dept")
+            user.year_id = year_id
+            user.project_id = project_id
+            user.employment_status = row.get("employment_status") or EmploymentStatus.ACTIVE.value
+            user.account_status = row.get("account_status") or AccountStatus.ENABLED.value
+            updated += 1
+        else:
+            username = real_name
+            if db.query(User).filter(User.username == username).first():
+                raise HTTPException(status_code=400, detail=f"登录账号“{username}”已存在，无法重复创建")
+            user = User(
+                username=username,
+                password_hash=hash_password(uuid4().hex),
+                role=UserRole.STUDENT.value,
+                real_name=real_name,
+                email=email,
+                phone=row.get("phone"),
+                address=row.get("address"),
+                department=row.get("department"),
+                system=row.get("system"),
+                level1_dept=row.get("level1_dept"),
+                year_id=year_id,
+                project_id=project_id,
+                employment_status=row.get("employment_status") or EmploymentStatus.ACTIVE.value,
+                account_status=row.get("account_status") or AccountStatus.ENABLED.value,
+            )
+            db.add(user)
+            db.flush()
+            created += 1
 
-        if group_id:
-            gm = GroupMember(group_id=group_id, student_id=user.id)
-            db.add(gm)
+        if project_id:
+            project_group_ids = db.query(Group.id).filter(Group.project_id == project_id)
+            db.query(GroupMember).filter(
+                GroupMember.student_id == user.id,
+                GroupMember.group_id.in_(project_group_ids),
+            ).delete(synchronize_session=False)
+        if group_id and not db.query(GroupMember).filter(
+            GroupMember.group_id == group_id,
+            GroupMember.student_id == user.id,
+        ).first():
+            db.add(GroupMember(group_id=group_id, student_id=user.id))
+
+        if project_id and year_id:
+            enrollment = db.query(ProjectEnrollment).filter(
+                ProjectEnrollment.student_id == user.id,
+                ProjectEnrollment.project_id == project_id,
+            ).first()
+            if not enrollment:
+                prior_count = db.query(ProjectEnrollment).filter(
+                    ProjectEnrollment.student_id == user.id,
+                ).count()
+                enrollment = ProjectEnrollment(
+                    student_id=user.id,
+                    year_id=year_id,
+                    project_id=project_id,
+                    label=row.get("enrollment_label") or ("再次入选" if prior_count else "首次参加"),
+                )
+                db.add(enrollment)
+            enrollment.year_id = year_id
+            enrollment.group_id = group_id
+            enrollment.status = "在读"
+            if row.get("enrollment_label"):
+                enrollment.label = row.get("enrollment_label")
+            if row.get("enrollment_remark") is not None:
+                enrollment.remark = row.get("enrollment_remark")
 
         if email:
             existing_emails.add(email)
-        created += 1
 
-    _log_operation(db, current_user.id, "批量导入学员", "student", None, f"批量导入 {created} 名学员")
+    _log_operation(
+        db, current_user.id, "批量导入学员", "student", None,
+        f"新增账号 {created} 名，新增项目关联 {updated} 名，跳过 {skipped} 名"
+    )
     db.commit()
-    return {"message": f"成功导入 {created} 名学员", "preview": preview.model_dump()}
+    preview.skipped_count = skipped
+    return {
+        "message": f"导入完成：新增账号 {created} 名，新增项目关联 {updated} 名，已跳过 {skipped} 名同项目学员",
+        "preview": preview.model_dump(),
+    }
+
+
+def _delete_student_records(db: Session, student: User):
+    sid = student.id
+    db.query(Point).filter(Point.student_id == sid).delete(synchronize_session=False)
+    db.query(ProjectEnrollment).filter(ProjectEnrollment.student_id == sid).delete(synchronize_session=False)
+    db.query(GroupMember).filter(GroupMember.student_id == sid).delete(synchronize_session=False)
+    db.query(PhaseParticipant).filter(PhaseParticipant.student_id == sid).delete(synchronize_session=False)
+    db.query(Redemption).filter(Redemption.student_id == sid).delete(synchronize_session=False)
+    db.query(PrizeAward).filter(PrizeAward.student_id == sid).delete(synchronize_session=False)
+    db.query(Notification).filter(Notification.user_id == sid).delete(synchronize_session=False)
+    db.delete(student)
+
+
+@router.delete("/students/{student_id}")
+def delete_student_account(
+    student_id: int,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    student = db.query(User).filter(
+        User.id == student_id,
+        User.role == UserRole.STUDENT.value,
+    ).first()
+    if not student:
+        raise HTTPException(status_code=404, detail="学员不存在或已删除")
+    name = student.real_name
+    try:
+        _delete_student_records(db, student)
+        _log_operation(db, current_user.id, "删除学员", "student", student_id, f"彻底删除学员 {name}")
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=f"删除失败：{exc}")
+    return {"message": f"已彻底删除学员{name}"}
 
 
 @router.post("/students/batch-delete")
@@ -604,18 +1160,227 @@ def batch_delete_students(
         student = db.query(User).filter(User.id == sid, User.role == UserRole.STUDENT.value).first()
         if not student:
             continue
-        # 彻底删除学员所有关联数据
-        db.query(Point).filter(Point.student_id == sid).delete()
-        db.query(GroupMember).filter(GroupMember.student_id == sid).delete()
-        db.query(PhaseParticipant).filter(PhaseParticipant.student_id == sid).delete()
-        db.query(Redemption).filter(Redemption.student_id == sid).delete()
-        db.query(PrizeAward).filter(PrizeAward.student_id == sid).delete()
-        db.query(Notification).filter(Notification.user_id == sid).delete()
-        db.delete(student)
+        _delete_student_records(db, student)
         deleted += 1
     _log_operation(db, current_user.id, "批量删除学员", "student", None, f"硬删除 {deleted} 名学员")
     db.commit()
     return {"message": f"已彻底删除 {deleted} 名学员"}
+
+
+@router.get("/projects/{project_id}/members")
+def list_project_members(
+    project_id: int,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    project = db.query(TrainingProject).filter(TrainingProject.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    enrollments = db.query(ProjectEnrollment).filter(
+        ProjectEnrollment.project_id == project_id,
+    ).order_by(ProjectEnrollment.id.desc()).all()
+    items = []
+    for enrollment in enrollments:
+        student = db.query(User).filter(User.id == enrollment.student_id).first()
+        if not student:
+            continue
+        all_enrollments = db.query(ProjectEnrollment).filter(
+            ProjectEnrollment.student_id == student.id,
+        ).order_by(ProjectEnrollment.joined_at).all()
+        history = []
+        for item in all_enrollments:
+            history_project = db.query(TrainingProject).filter(TrainingProject.id == item.project_id).first()
+            history_year = db.query(AcademicYear).filter(AcademicYear.id == item.year_id).first()
+            history.append({
+                "project_id": item.project_id,
+                "project_name": history_project.name if history_project else "",
+                "year_name": history_year.name if history_year else "",
+            })
+        auto_label = "跨年度再次参加" if len(all_enrollments) > 1 else "首次参加"
+        group = db.query(Group).filter(Group.id == enrollment.group_id).first() if enrollment.group_id else None
+        items.append({
+            "student_id": student.id,
+            "real_name": student.real_name,
+            "username": student.username,
+            "system": student.system,
+            "level1_dept": student.level1_dept,
+            "group_id": enrollment.group_id,
+            "group_name": group.name if group else "",
+            "status": enrollment.status,
+            "label": enrollment.label or auto_label,
+            "auto_label": auto_label,
+            "remark": enrollment.remark,
+            "participation_count": len(all_enrollments),
+            "project_history": history,
+            "joined_at": enrollment.joined_at.isoformat() if enrollment.joined_at else None,
+        })
+    return {"project_id": project.id, "project_name": project.name, "items": items}
+
+
+@router.post("/projects/{project_id}/members")
+def add_project_member(
+    project_id: int,
+    data: dict = Body(...),
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    project = db.query(TrainingProject).filter(TrainingProject.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    student = None
+    if data.get("student_id"):
+        student = db.query(User).filter(
+            User.id == int(data["student_id"]), User.role == UserRole.STUDENT.value,
+        ).first()
+    real_name = str(data.get("real_name") or "").strip()
+    if not student and real_name:
+        account = db.query(User).filter(User.username == real_name).first()
+        if account and account.role != UserRole.STUDENT.value:
+            raise HTTPException(status_code=400, detail=f"登录账号“{real_name}”已被使用")
+        student = account
+    if not student and real_name:
+        student = User(
+            username=real_name,
+            password_hash=hash_password(uuid4().hex),
+            role=UserRole.STUDENT.value,
+            real_name=real_name,
+            year_id=project.year_id,
+            project_id=project.id,
+            employment_status=EmploymentStatus.ACTIVE.value,
+            account_status=AccountStatus.ENABLED.value,
+        )
+        db.add(student)
+        db.flush()
+    if not student:
+        raise HTTPException(status_code=400, detail="请选择已有学员或输入新学员姓名")
+
+    conflicting_enrollment = db.query(ProjectEnrollment).filter(
+        ProjectEnrollment.student_id == student.id,
+        ProjectEnrollment.year_id == project.year_id,
+        ProjectEnrollment.project_id != project.id,
+    ).first()
+    if conflicting_enrollment:
+        existing_project_name = db.query(TrainingProject.name).filter(
+            TrainingProject.id == conflicting_enrollment.project_id
+        ).scalar() or "其他项目"
+        raise HTTPException(
+            status_code=400,
+            detail=f"{student.real_name}本年度已参加“{existing_project_name}”，不能同时加入两个项目",
+        )
+
+    group_id = data.get("group_id")
+    group_name = str(data.get("group_name") or "").strip()
+    group = None
+    if group_id:
+        group = db.query(Group).filter(Group.id == int(group_id), Group.project_id == project.id).first()
+        if not group:
+            raise HTTPException(status_code=400, detail="所选小组不属于当前项目")
+    elif group_name:
+        group = db.query(Group).filter(Group.name == group_name, Group.project_id == project.id).first()
+        if not group:
+            group = Group(name=group_name, year_id=project.year_id, project_id=project.id)
+            db.add(group)
+            db.flush()
+
+    enrollment = db.query(ProjectEnrollment).filter(
+        ProjectEnrollment.student_id == student.id,
+        ProjectEnrollment.project_id == project.id,
+    ).first()
+    prior_count = db.query(ProjectEnrollment).filter(ProjectEnrollment.student_id == student.id).count()
+    if not enrollment:
+        enrollment = ProjectEnrollment(
+            student_id=student.id,
+            year_id=project.year_id,
+            project_id=project.id,
+            label=str(data.get("label") or "").strip() or ("再次入选" if prior_count else "首次参加"),
+        )
+        db.add(enrollment)
+    enrollment.group_id = group.id if group else None
+    enrollment.status = str(data.get("status") or "在读")
+    enrollment.remark = str(data.get("remark") or "").strip() or None
+    if data.get("label"):
+        enrollment.label = str(data["label"]).strip()
+
+    student.year_id = project.year_id
+    student.project_id = project.id
+    old_group_ids = db.query(Group.id).filter(Group.project_id == project.id)
+    db.query(GroupMember).filter(
+        GroupMember.student_id == student.id,
+        GroupMember.group_id.in_(old_group_ids),
+    ).delete(synchronize_session=False)
+    if group:
+        db.add(GroupMember(group_id=group.id, student_id=student.id))
+
+    _log_operation(db, current_user.id, "添加项目学员", "student", student.id, f"将 {student.real_name} 加入项目 {project.name}")
+    db.commit()
+    return {"message": f"已将{student.real_name}加入项目"}
+
+
+@router.put("/projects/{project_id}/members/{student_id}")
+def update_project_member(
+    project_id: int,
+    student_id: int,
+    data: dict = Body(...),
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    enrollment = db.query(ProjectEnrollment).filter(
+        ProjectEnrollment.project_id == project_id,
+        ProjectEnrollment.student_id == student_id,
+    ).first()
+    if not enrollment:
+        raise HTTPException(status_code=404, detail="项目学员关系不存在")
+    if "group_id" in data:
+        group_id = int(data["group_id"]) if data["group_id"] else None
+        if group_id and not db.query(Group).filter(Group.id == group_id, Group.project_id == project_id).first():
+            raise HTTPException(status_code=400, detail="所选小组不属于当前项目")
+        project_group_ids = db.query(Group.id).filter(Group.project_id == project_id)
+        db.query(GroupMember).filter(
+            GroupMember.student_id == student_id,
+            GroupMember.group_id.in_(project_group_ids),
+        ).delete(synchronize_session=False)
+        enrollment.group_id = group_id
+        if group_id:
+            db.add(GroupMember(group_id=group_id, student_id=student_id))
+    if "status" in data:
+        enrollment.status = str(data["status"] or "在读")
+    if "label" in data:
+        enrollment.label = str(data["label"] or "").strip() or None
+    if "remark" in data:
+        enrollment.remark = str(data["remark"] or "").strip() or None
+    db.commit()
+    return {"message": "项目学员信息已更新"}
+
+
+@router.delete("/projects/{project_id}/members/{student_id}")
+def remove_project_member_account(
+    project_id: int,
+    student_id: int,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    enrollment = db.query(ProjectEnrollment).filter(
+        ProjectEnrollment.project_id == project_id,
+        ProjectEnrollment.student_id == student_id,
+    ).first()
+    if not enrollment:
+        raise HTTPException(status_code=404, detail="该学员不在当前项目中")
+    if enrollment.group_id:
+        db.query(GroupMember).filter(
+            GroupMember.student_id == student_id,
+            GroupMember.group_id == enrollment.group_id,
+        ).delete(synchronize_session=False)
+    db.delete(enrollment)
+    student = db.query(User).filter(User.id == student_id).first()
+    db.flush()
+    if student and student.project_id == project_id:
+        fallback = db.query(ProjectEnrollment).filter(
+            ProjectEnrollment.student_id == student_id,
+        ).order_by(ProjectEnrollment.joined_at.desc()).first()
+        student.project_id = fallback.project_id if fallback else None
+        student.year_id = fallback.year_id if fallback else None
+    db.commit()
+    return {"message": "已从项目移除学员，学员账号和其他项目记录已保留"}
 
 
 def _collect_projects_groups_from_rows(db: Session, rows: list, invalid_projects: list, invalid_groups: list):
@@ -729,6 +1494,46 @@ def update_group(
         member_count=member_count, total_points=total_pts,
         avg_points=round(avg_pts, 2), rank=None, status=group.status,
     )
+
+
+@router.delete("/groups/{group_id}")
+def delete_group(
+    group_id: int,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    group = db.query(Group).filter(Group.id == group_id).first()
+    if not group:
+        raise HTTPException(status_code=404, detail="小组不存在或已删除")
+
+    group_name = group.name
+    affected_members = db.query(GroupMember).filter(GroupMember.group_id == group_id).count()
+
+    # 保留学员、积分和奖品历史，只解除它们与已删除小组的关联。
+    db.query(ProjectEnrollment).filter(ProjectEnrollment.group_id == group_id).update(
+        {ProjectEnrollment.group_id: None}, synchronize_session=False,
+    )
+    db.query(PhaseParticipant).filter(PhaseParticipant.group_id == group_id).update(
+        {PhaseParticipant.group_id: None}, synchronize_session=False,
+    )
+    db.query(Point).filter(Point.group_id == group_id).update(
+        {Point.group_id: None}, synchronize_session=False,
+    )
+    db.query(PrizeAward).filter(PrizeAward.group_id == group_id).update(
+        {PrizeAward.group_id: None}, synchronize_session=False,
+    )
+    db.query(PhaseGroup).filter(PhaseGroup.group_id == group_id).delete(synchronize_session=False)
+    db.query(GroupMember).filter(GroupMember.group_id == group_id).delete(synchronize_session=False)
+    db.delete(group)
+    _log_operation(
+        db, current_user.id, "删除小组", "group", group_id,
+        f"删除小组 {group_name}，{affected_members} 名成员变为未分组",
+    )
+    db.commit()
+    return {
+        "message": f"小组“{group_name}”已删除",
+        "affected_members": affected_members,
+    }
 
 
 @router.get("/groups/{group_id}", response_model=GroupDetail)
@@ -880,18 +1685,32 @@ def remove_group_member(
 # ═══════════════ Phases ═══════════════
 
 def _auto_phase_status(phase: Phase):
-    """根据北京时间，自动计算阶段实际状态（仅对未开始/进行中的阶段生效，已关闭/已归档不变）"""
-    if phase.status in (PhaseStatus.CLOSED.value, PhaseStatus.ARCHIVED.value):
+    """根据北京时间和起止日期自动计算阶段状态。"""
+    if phase.status == PhaseStatus.ARCHIVED.value:
         return phase.status
     if not phase.start_date or not phase.end_date:
         return phase.status
-    now = datetime.now(timezone(timedelta(hours=8))).replace(tzinfo=None)  # 北京时间
-    if now < phase.start_date:
+    today = datetime.now(timezone(timedelta(hours=8))).date()
+    if today < phase.start_date.date():
         return PhaseStatus.PENDING.value
-    elif now <= phase.end_date:
+    elif today <= phase.end_date.date():
         return PhaseStatus.IN_PROGRESS.value
     else:
         return PhaseStatus.CLOSED.value
+
+
+def _sync_phase_statuses(db: Session, project_id: int = None):
+    query = db.query(Phase).filter(Phase.status != PhaseStatus.ARCHIVED.value)
+    if project_id:
+        query = query.filter(Phase.project_id == project_id)
+    changed = False
+    for phase in query.all():
+        calculated = _auto_phase_status(phase)
+        if phase.status != calculated:
+            phase.status = calculated
+            changed = True
+    if changed:
+        db.commit()
 
 @router.get("/phases", response_model=List[PhaseOut])
 def list_phases(
@@ -900,6 +1719,7 @@ def list_phases(
     current_user: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
+    _sync_phase_statuses(db, project_id)
     q = db.query(Phase)
     if year_id:
         q = q.filter(Phase.year_id == year_id)
@@ -923,7 +1743,7 @@ def list_phases(
             id=p.id, name=p.name, year_id=p.year_id, project_id=p.project_id,
             year_name=year_name, project_name=project_name,
             start_date=p.start_date, end_date=p.end_date,
-            description=p.description, status=p.status,
+            description=p.description, status=_auto_phase_status(p),
             participant_count=participant_count, group_count=group_count,
             total_points=total_pts,
             allow_ranking=p.allow_ranking, allow_excellent=p.allow_excellent,
@@ -945,12 +1765,22 @@ def create_phase(
     project = db.query(TrainingProject).filter(TrainingProject.id == data.project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
-
-    # 自动关闭同一项目下其他进行中的阶段
-    db.query(Phase).filter(
+    if not data.start_date or not data.end_date:
+        raise HTTPException(status_code=400, detail="请设置阶段开始和结束时间")
+    if data.start_date > data.end_date:
+        raise HTTPException(status_code=400, detail="阶段结束时间不能早于开始时间")
+    if project.start_date and data.start_date < project.start_date:
+        raise HTTPException(status_code=400, detail="阶段开始时间不能早于项目开始时间")
+    if project.end_date and data.end_date > project.end_date:
+        raise HTTPException(status_code=400, detail="阶段结束时间不能晚于项目结束时间")
+    overlap = db.query(Phase).filter(
         Phase.project_id == data.project_id,
-        Phase.status == PhaseStatus.IN_PROGRESS.value,
-    ).update({Phase.status: PhaseStatus.CLOSED.value})
+        Phase.status != PhaseStatus.ARCHIVED.value,
+        Phase.start_date <= data.end_date,
+        Phase.end_date >= data.start_date,
+    ).first()
+    if overlap:
+        raise HTTPException(status_code=400, detail=f"阶段时间与“{overlap.name}”重叠")
 
     phase = Phase(
         name=data.name, year_id=data.year_id, project_id=data.project_id,
@@ -958,7 +1788,7 @@ def create_phase(
         description=data.description,
         allow_ranking=data.allow_ranking, allow_excellent=data.allow_excellent,
         excellent_count=data.excellent_count, prize_description=data.prize_description,
-        status=PhaseStatus.IN_PROGRESS.value,
+        status=PhaseStatus.PENDING.value,
     )
     db.add(phase)
     db.flush()
@@ -993,6 +1823,26 @@ def update_phase(
     updates = data.model_dump(exclude_unset=True)
     for key, val in updates.items():
         setattr(phase, key, val)
+    if not phase.start_date or not phase.end_date:
+        raise HTTPException(status_code=400, detail="请设置阶段开始和结束时间")
+    if phase.start_date > phase.end_date:
+        raise HTTPException(status_code=400, detail="阶段结束时间不能早于开始时间")
+    project = db.query(TrainingProject).filter(TrainingProject.id == phase.project_id).first()
+    if project and project.start_date and phase.start_date < project.start_date:
+        raise HTTPException(status_code=400, detail="阶段开始时间不能早于项目开始时间")
+    if project and project.end_date and phase.end_date > project.end_date:
+        raise HTTPException(status_code=400, detail="阶段结束时间不能晚于项目结束时间")
+    if date_changed:
+        overlap = db.query(Phase).filter(
+            Phase.id != phase.id,
+            Phase.project_id == phase.project_id,
+            Phase.status != PhaseStatus.ARCHIVED.value,
+            Phase.start_date <= phase.end_date,
+            Phase.end_date >= phase.start_date,
+        ).first()
+        if overlap:
+            raise HTTPException(status_code=400, detail=f"阶段时间与“{overlap.name}”重叠")
+    phase.status = _auto_phase_status(phase)
 
     _log_operation(db, current_user.id, "更新阶段", "phase", phase_id, f"更新阶段 {phase.name}")
     db.commit()
@@ -1450,12 +2300,15 @@ def import_points(
     total_points = 0
     student_set = set()
 
-    # 收集所有 record_number 检查重复
+    # 收集数据库中已存在的 record_number，并单独跟踪本次文件内重复。
     all_numbers = [r.record_number for r in records if r.record_number]
+    existing_numbers = set()
     if all_numbers:
         existing_numbers = {r[0] for r in db.query(Point.record_number).filter(
             Point.record_number.in_(all_numbers)
         ).all() if r[0]}
+    seen_numbers = set()
+    valid_records = []
 
     for rec in records:
         student = db.query(User).filter(User.id == rec.student_id).first()
@@ -1465,10 +2318,10 @@ def import_points(
             continue
 
         if rec.record_number:
-            if rec.record_number in existing_numbers:
+            if rec.record_number in existing_numbers or rec.record_number in seen_numbers:
                 duplicate_count += 1
                 continue
-            existing_numbers.add(rec.record_number)
+            seen_numbers.add(rec.record_number)
 
         if rec.phase_id:
             phase = db.query(Phase).filter(Phase.id == rec.phase_id).first()
@@ -1481,6 +2334,7 @@ def import_points(
         new_count += 1
         total_points += rec.points
         student_set.add(rec.student_id)
+        valid_records.append(rec)
 
     preview = PointImportPreview(
         valid_count=valid_count,
@@ -1495,17 +2349,7 @@ def import_points(
 
     # 实际导入
     imported = 0
-    for rec in records:
-        if rec.record_number and rec.record_number in existing_numbers:
-            continue
-        student = db.query(User).filter(User.id == rec.student_id).first()
-        if not student:
-            continue
-        if rec.phase_id:
-            phase = db.query(Phase).filter(Phase.id == rec.phase_id).first()
-            if not phase:
-                continue
-
+    for rec in valid_records:
         record = Point(
             record_number=rec.record_number,
             student_id=rec.student_id,
@@ -1561,24 +2405,61 @@ def update_point(
     return {"message": "积分记录已更新"}
 
 
+@router.post("/points/batch-delete")
+def batch_delete_points(
+    data: dict = Body(...),
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    raw_ids = data.get("point_ids")
+    if not isinstance(raw_ids, list) or not raw_ids:
+        raise HTTPException(status_code=400, detail="请选择要删除的积分流水")
+    try:
+        point_ids = list({int(point_id) for point_id in raw_ids})
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="积分流水编号格式错误")
+    if len(point_ids) > 500:
+        raise HTTPException(status_code=400, detail="单次最多删除 500 条积分流水")
+
+    points = db.query(Point).filter(Point.id.in_(point_ids)).all()
+    if not points:
+        raise HTTPException(status_code=404, detail="未找到可删除的积分流水")
+    affected_students = len({point.student_id for point in points})
+    total_change = sum(point.points for point in points if point.status == PointStatus.ACTIVE.value)
+    deleted_count = len(points)
+    for point in points:
+        db.delete(point)
+    _log_operation(
+        db, current_user.id, "批量删除积分流水", "point", None,
+        f"删除 {deleted_count} 条积分流水，影响 {affected_students} 名学员，移除有效积分合计 {total_change}",
+    )
+    db.commit()
+    return {
+        "message": f"成功删除 {deleted_count} 条积分流水",
+        "deleted_count": deleted_count,
+        "affected_students": affected_students,
+        "removed_points": total_change,
+    }
+
+
 @router.delete("/points/{point_id}")
-def revoke_point(
+def delete_point(
     point_id: int,
-    data: PointRevoke,
     current_user: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
     point = db.query(Point).filter(Point.id == point_id).first()
     if not point:
         raise HTTPException(status_code=404, detail="积分记录不存在")
-    if point.status == PointStatus.REVOKED.value:
-        raise HTTPException(status_code=400, detail="该积分已被撤销")
-
-    point.status = PointStatus.REVOKED.value
-    point.revoke_reason = data.reason
-    _log_operation(db, current_user.id, "撤销积分", "point", point_id, f"撤销积分: {data.reason}")
+    student_id = point.student_id
+    points = point.points if point.status == PointStatus.ACTIVE.value else 0
+    _log_operation(
+        db, current_user.id, "删除积分流水", "point", point_id,
+        f"删除学员 {student_id} 的积分流水，移除有效积分 {points}",
+    )
+    db.delete(point)
     db.commit()
-    return {"message": "积分已撤销"}
+    return {"message": "积分流水已删除", "removed_points": points}
 
 
 @router.get("/points/records", response_model=PaginatedResponse)
@@ -1807,6 +2688,35 @@ def list_products(
     return [ProductOut.model_validate(p) for p in products]
 
 
+@router.post("/products/upload-image")
+async def upload_product_image(
+    file: UploadFile = File(...),
+    current_user: User = Depends(require_admin),
+):
+    """保存商品图片并返回可直接用于商品数据的站内地址。"""
+    allowed_types = {
+        "image/jpeg": ".jpg",
+        "image/png": ".png",
+        "image/webp": ".webp",
+        "image/gif": ".gif",
+    }
+    extension = allowed_types.get(file.content_type or "")
+    if not extension:
+        raise HTTPException(status_code=400, detail="仅支持 JPG、PNG、WebP 或 GIF 图片")
+
+    contents = await file.read()
+    if not contents:
+        raise HTTPException(status_code=400, detail="图片文件为空")
+    if len(contents) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="图片不能超过 5MB")
+
+    upload_dir = Path(__file__).resolve().parent.parent / "uploads" / "products"
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    filename = f"{uuid4().hex}{extension}"
+    (upload_dir / filename).write_bytes(contents)
+    return {"image_url": f"/api/uploads/products/{filename}"}
+
+
 @router.post("/products", response_model=ProductOut)
 def create_product(
     data: ProductCreate,
@@ -1848,6 +2758,12 @@ def update_product(
         raise HTTPException(status_code=404, detail="商品不存在")
 
     updates = data.model_dump(exclude_unset=True)
+    if "product_status" in updates:
+        valid_statuses = {status.value for status in ProductStatus}
+        if updates["product_status"] not in valid_statuses:
+            raise HTTPException(status_code=400, detail="无效的商品状态")
+        if updates["product_status"] == ProductStatus.AVAILABLE.value and product.available_stock <= 0:
+            raise HTTPException(status_code=400, detail="库存不足，无法上架")
     for key, val in updates.items():
         setattr(product, key, val)
 
@@ -1885,7 +2801,11 @@ def list_redemptions(
 ):
     q = db.query(Redemption)
     if status:
-        q = q.filter(Redemption.status == status)
+        status_aliases = {
+            RedemptionStatus.APPROVED.value: [RedemptionStatus.APPROVED.value, RedemptionStatus.PENDING_SHIP.value],
+            RedemptionStatus.SHIPPED.value: [RedemptionStatus.SHIPPED.value, RedemptionStatus.PENDING_PICKUP.value],
+        }
+        q = q.filter(Redemption.status.in_(status_aliases.get(status, [status])))
     if keyword:
         q = q.join(User, Redemption.student_id == User.id).filter(
             or_(
@@ -1906,6 +2826,7 @@ def list_redemptions(
             student_name=student.real_name if student else "",
             product_id=r.product_id,
             product_name=product.name if product else "",
+            product_image_url=product.image_url if product else None,
             points_spent=r.points_spent, status=r.status,
             locked_at=r.locked_at, approved_at=r.approved_at,
             shipped_at=r.shipped_at, received_at=r.received_at,
@@ -1922,6 +2843,121 @@ def list_redemptions(
     )
 
 
+@router.put("/redemptions/{redemption_id}/status")
+def update_redemption_status(
+    redemption_id: int,
+    data: RedemptionProcess,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """在列表中直接更新兑换状态，并同步维护库存占用。"""
+    redemption = db.query(Redemption).filter(Redemption.id == redemption_id).first()
+    if not redemption:
+        raise HTTPException(status_code=404, detail="兑换记录不存在")
+
+    allowed_statuses = {
+        RedemptionStatus.PENDING.value,
+        RedemptionStatus.APPROVED.value,
+        RedemptionStatus.REJECTED.value,
+        RedemptionStatus.SHIPPED.value,
+        RedemptionStatus.RECEIVED.value,
+        RedemptionStatus.CANCELLED.value,
+        RedemptionStatus.COMPLETED.value,
+    }
+    new_status = data.status
+    if new_status not in allowed_statuses:
+        raise HTTPException(status_code=400, detail="不支持的兑换状态")
+
+    legacy_aliases = {
+        RedemptionStatus.PENDING_SHIP.value: RedemptionStatus.APPROVED.value,
+        RedemptionStatus.PENDING_PICKUP.value: RedemptionStatus.SHIPPED.value,
+    }
+    old_status = legacy_aliases.get(redemption.status, redemption.status)
+    if old_status == new_status:
+        return {"message": f"状态已是{new_status}"}
+
+    reserved_statuses = {RedemptionStatus.PENDING.value}
+    committed_statuses = {
+        RedemptionStatus.APPROVED.value,
+        RedemptionStatus.SHIPPED.value,
+        RedemptionStatus.RECEIVED.value,
+        RedemptionStatus.COMPLETED.value,
+    }
+    released_statuses = {RedemptionStatus.REJECTED.value, RedemptionStatus.CANCELLED.value}
+
+    def inventory_group(value: str) -> str:
+        if value in reserved_statuses:
+            return "reserved"
+        if value in committed_statuses:
+            return "committed"
+        if value in released_statuses:
+            return "released"
+        return "committed"
+
+    old_group = inventory_group(old_status)
+    new_group = inventory_group(new_status)
+    if old_group == "released" and new_group != "released":
+        _, _, available = _compute_student_points(
+            db,
+            redemption.student_id,
+            redemption.student.year_id if redemption.student else None,
+            redemption.student.project_id if redemption.student else None,
+        )
+        if available < redemption.points_spent:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"状态更新失败：学员可用积分不足（当前 {available} 分，"
+                    f"该兑换需要 {redemption.points_spent} 分）"
+                ),
+            )
+    product = db.query(Product).filter(Product.id == redemption.product_id).first()
+    if product and old_group != new_group:
+        if old_group == "reserved":
+            product.locked_stock = max((product.locked_stock or 0) - 1, 0)
+            if new_group == "released":
+                product.available_stock += 1
+        elif old_group == "committed":
+            if new_group == "reserved":
+                product.locked_stock += 1
+            elif new_group == "released":
+                product.available_stock += 1
+        elif old_group == "released":
+            if product.available_stock <= 0:
+                raise HTTPException(status_code=400, detail="商品库存不足，无法恢复该兑换状态")
+            product.available_stock -= 1
+            if new_group == "reserved":
+                product.locked_stock += 1
+
+    now = datetime.now(timezone.utc)
+    redemption.status = new_status
+    if new_status == RedemptionStatus.APPROVED.value:
+        redemption.approved_at = redemption.approved_at or now
+    if new_status == RedemptionStatus.SHIPPED.value:
+        redemption.shipped_at = now
+        redemption.express_company = data.express_company
+        redemption.tracking_number = data.tracking_number
+    if new_status in {RedemptionStatus.RECEIVED.value, RedemptionStatus.COMPLETED.value}:
+        redemption.received_at = redemption.received_at or now
+    if new_status == RedemptionStatus.REJECTED.value:
+        redemption.reject_reason = data.reject_reason
+    else:
+        # A rejection reason belongs only to the rejected state. Clear the
+        # previous reason when an administrator moves the request onward.
+        redemption.reject_reason = None
+
+    _log_operation(
+        db,
+        current_user.id,
+        "更新兑换状态",
+        "redemption",
+        redemption_id,
+        f"兑换申请 #{redemption_id}: {old_status} → {new_status}",
+    )
+    db.commit()
+    return {"message": f"状态已更新为{new_status}"}
+
+
 @router.put("/redemptions/{redemption_id}/approve")
 def approve_redemption(
     redemption_id: int,
@@ -1936,14 +2972,13 @@ def approve_redemption(
 
     product = db.query(Product).filter(Product.id == redemption.product_id).first()
     if product:
-        # 扣减 available_stock 和 locked_stock
-        if product.available_stock > 0:
-            product.available_stock -= 1
+        # 申请时已扣减可用库存，这里只释放锁定数量。
         if product.locked_stock > 0:
             product.locked_stock -= 1
 
-    redemption.status = RedemptionStatus.PENDING_SHIP.value
+    redemption.status = RedemptionStatus.APPROVED.value
     redemption.approved_at = datetime.now(timezone.utc)
+    redemption.reject_reason = None
 
     _log_operation(db, current_user.id, "审核通过兑换", "redemption", redemption_id, f"通过兑换申请 #{redemption_id}")
     db.commit()
@@ -1988,11 +3023,12 @@ def ship_redemption(
     redemption = db.query(Redemption).filter(Redemption.id == redemption_id).first()
     if not redemption:
         raise HTTPException(status_code=404, detail="兑换记录不存在")
-    if redemption.status != RedemptionStatus.PENDING_SHIP.value:
-        raise HTTPException(status_code=400, detail="只能为待发货的申请发货")
+    if redemption.status not in [RedemptionStatus.APPROVED.value, RedemptionStatus.PENDING_SHIP.value]:
+        raise HTTPException(status_code=400, detail="只能为已通过的申请发货")
 
     redemption.status = RedemptionStatus.SHIPPED.value
     redemption.shipped_at = datetime.now(timezone.utc)
+    redemption.reject_reason = None
     redemption.express_company = data.express_company
     redemption.tracking_number = data.tracking_number
 
@@ -2015,6 +3051,7 @@ def receive_redemption(
 
     redemption.status = RedemptionStatus.RECEIVED.value
     redemption.received_at = datetime.now(timezone.utc)
+    redemption.reject_reason = None
 
     _log_operation(db, current_user.id, "确认领取", "redemption", redemption_id, f"确认领取 #{redemption_id}")
     db.commit()
@@ -2037,14 +3074,21 @@ def on_site_exchange(
     if not product:
         raise HTTPException(status_code=404, detail="商品不存在")
 
-    if product.on_site_stock <= 0:
-        raise HTTPException(status_code=400, detail="现场库存不足")
+    if product.product_status not in [ProductStatus.AVAILABLE.value, ProductStatus.LOW_STOCK.value]:
+        raise HTTPException(status_code=400, detail="兑换失败：该商品未上架")
 
-    deduct = data.deduct_points
+    if product.on_site_stock <= 0:
+        raise HTTPException(status_code=400, detail="兑换失败：现场库存不足")
+
+    # 兑换积分必须以商品管理中的定价为准，不能采用前端传入的数值。
+    deduct = product.points_required
     if deduct > 0:
         _, _, available = _compute_student_points(db, student.id, student.year_id, student.project_id)
         if available < deduct:
-            raise HTTPException(status_code=400, detail="学员可用积分不足")
+            raise HTTPException(
+                status_code=400,
+                detail=f"兑换失败：学员可用积分不足（当前 {available} 分，需要 {deduct} 分）",
+            )
 
         # 创建负面积分记录表示扣除
         pt_record = Point(
@@ -2115,13 +3159,16 @@ def on_site_reward(
     if product.on_site_stock <= 0:
         raise HTTPException(status_code=400, detail="现场库存不足")
 
+    membership = db.query(GroupMember).filter(GroupMember.student_id == student.id).first()
+    group_id = membership.group_id if membership else None
+
     product.on_site_stock -= 1
 
     award = PrizeAward(
         student_id=student.id,
         product_id=product.id,
         phase_id=data.phase_id,
-        group_id=data.group_id,
+        group_id=group_id,
         award_type=data.award_type,
         points_deducted=0,
         created_by=current_user.id,
@@ -2135,7 +3182,7 @@ def on_site_reward(
     return {"message": "现场奖励发放成功"}
 
 
-# ═══════════════ Yearly Overview ═══════════════
+# ═══════════════ Yearly Data Summary ═══════════════
 
 @router.get("/yearly/overview")
 def yearly_overview(
@@ -2144,31 +3191,88 @@ def yearly_overview(
 ):
     years = db.query(AcademicYear).order_by(AcademicYear.id.desc()).all()
     result = []
-    for y in years:
-        projects = db.query(TrainingProject).filter(TrainingProject.year_id == y.id).all()
-        year_total_students = 0
-        year_total_points = 0
-        for p in projects:
-            student_count = db.query(func.count(User.id)).filter(
-                User.role == UserRole.STUDENT.value,
-                User.project_id == p.id,
-            ).scalar() or 0
-            year_total_students += student_count
-            pts = db.query(func.coalesce(func.sum(Point.points), 0)).filter(
-                Point.project_id == p.id, Point.status == PointStatus.ACTIVE.value,
-            ).scalar() or 0
-            year_total_points += pts
+    for year in years:
+        all_projects = db.query(TrainingProject).filter(TrainingProject.year_id == year.id).all()
+        archived_projects = [project for project in all_projects if project.status == ProjectStatus.ARCHIVED.value]
+        if not archived_projects:
+            continue
 
-        groups = db.query(func.count(Group.id)).filter(Group.year_id == y.id).scalar() or 0
-        phases = db.query(func.count(Phase.id)).filter(Phase.year_id == y.id).scalar() or 0
+        project_ids = [project.id for project in archived_projects]
+        points = db.query(Point).filter(
+            Point.project_id.in_(project_ids),
+            Point.status == PointStatus.ACTIVE.value,
+        ).all()
+        earned_points = sum(point.points for point in points if point.points > 0)
+        deducted_points = abs(sum(point.points for point in points if point.points < 0))
+
+        student_count = db.query(func.count(func.distinct(User.id))).filter(
+            User.role == UserRole.STUDENT.value,
+            User.project_id.in_(project_ids),
+        ).scalar() or 0
+        group_count = db.query(func.count(Group.id)).filter(Group.project_id.in_(project_ids)).scalar() or 0
+        phase_count = db.query(func.count(Phase.id)).filter(Phase.project_id.in_(project_ids)).scalar() or 0
+
+        redemptions = db.query(Redemption).join(User, Redemption.student_id == User.id).filter(
+            User.project_id.in_(project_ids),
+            Redemption.status.notin_([RedemptionStatus.REJECTED.value, RedemptionStatus.CANCELLED.value]),
+        ).all()
+        award_count = db.query(func.count(PrizeAward.id)).join(
+            User, PrizeAward.student_id == User.id
+        ).filter(User.project_id.in_(project_ids)).scalar() or 0
+
+        category_rows = db.query(
+            Point.category,
+            func.coalesce(func.sum(Point.points), 0),
+            func.count(Point.id),
+        ).filter(
+            Point.project_id.in_(project_ids),
+            Point.status == PointStatus.ACTIVE.value,
+            Point.points > 0,
+        ).group_by(Point.category).order_by(func.sum(Point.points).desc()).all()
+
+        project_summaries = []
+        for project in archived_projects:
+            project_points = [point for point in points if point.project_id == project.id]
+            project_summaries.append({
+                "id": project.id,
+                "name": project.name,
+                "student_count": db.query(func.count(User.id)).filter(
+                    User.role == UserRole.STUDENT.value,
+                    User.project_id == project.id,
+                ).scalar() or 0,
+                "group_count": db.query(func.count(Group.id)).filter(Group.project_id == project.id).scalar() or 0,
+                "phase_count": db.query(func.count(Phase.id)).filter(Phase.project_id == project.id).scalar() or 0,
+                "earned_points": sum(point.points for point in project_points if point.points > 0),
+                "net_points": sum(point.points for point in project_points),
+                "point_records": len(project_points),
+            })
 
         result.append({
-            "year_id": y.id, "year_name": y.name, "status": y.status,
-            "project_count": len(projects), "student_count": year_total_students,
-            "group_count": groups, "phase_count": phases,
-            "total_points": year_total_points,
+            "year_id": year.id,
+            "year_name": year.name,
+            "status": year.status,
+            "project_count": len(archived_projects),
+            "total_project_count": len(all_projects),
+            "student_count": student_count,
+            "group_count": group_count,
+            "phase_count": phase_count,
+            "earned_points": earned_points,
+            "deducted_points": deducted_points,
+            "net_points": sum(point.points for point in points),
+            "point_records": len(points),
+            "redemption_count": len(redemptions),
+            "redeemed_points": sum(item.points_spent for item in redemptions),
+            "award_count": award_count,
+            "categories": [
+                {"category": category or "未分类", "points": value or 0, "records": count or 0}
+                for category, value, count in category_rows
+            ],
+            "projects": project_summaries,
         })
-    return {"years": result}
+    return {
+        "years": result,
+        "scope_note": "仅统计已归档项目，进行中项目不会进入年度汇总",
+    }
 
 
 @router.post("/yearly/archive")

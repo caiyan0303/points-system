@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from database import get_db
 from models import User
 
-SECRET_KEY = "points-system-secret-key-change-in-production-2024"
+SECRET_KEY = os.getenv("SECRET_KEY", "local-development-only-change-before-production")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_HOURS = 24
 
