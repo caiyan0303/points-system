@@ -70,11 +70,19 @@ async function authRoutes(request, pathname) {
       'SELECT * FROM users WHERE (username = $1 OR real_name = $1 OR email = $1) AND ($2::text IS NULL OR role = $2) ORDER BY id LIMIT 1',
       [input.username, input.role || null],
     )
-    if (!user && input.role === 'admin' && process.env.ADMIN_USERNAME && process.env.ADMIN_PASSWORD &&
-        input.username === process.env.ADMIN_USERNAME && input.password === process.env.ADMIN_PASSWORD) {
+    const matchesConfiguredAdmin = input.role === 'admin' &&
+      process.env.ADMIN_USERNAME && process.env.ADMIN_PASSWORD &&
+      input.username === process.env.ADMIN_USERNAME && input.password === process.env.ADMIN_PASSWORD
+    if (matchesConfiguredAdmin) {
       user = await one(`INSERT INTO users(username,password_hash,role,real_name,account_status,is_active)
         VALUES($1,$2,'admin','系统管理员','启用',1)
-        ON CONFLICT(username) DO UPDATE SET username=EXCLUDED.username RETURNING *`,
+        ON CONFLICT(username) DO UPDATE SET
+          password_hash=EXCLUDED.password_hash,
+          role='admin',
+          real_name=EXCLUDED.real_name,
+          account_status='启用',
+          is_active=1
+        RETURNING *`,
         [process.env.ADMIN_USERNAME, hashPassword(process.env.ADMIN_PASSWORD)])
     }
     if (!user) return json({ detail: '账号不存在' }, 401)
