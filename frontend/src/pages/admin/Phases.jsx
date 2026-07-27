@@ -104,6 +104,17 @@ export default function AdminPhases({ embedded = false, initialProjectId = '' })
     } catch (err) { showToast(err.response?.data?.detail || '操作失败', 'error') }
   }
 
+  const handleDeletePhase = async (phase) => {
+    if (!window.confirm(`确定删除阶段“${phase.name}”吗？相关积分记录会保留，但不再关联此阶段。`)) return
+    try {
+      await api.delete(`/api/admin/phases/${phase.id}`)
+      showToast('阶段已删除')
+      setViewPhase(null)
+      setPhaseDetail(null)
+      fetchPhases()
+    } catch (err) { showToast(err.response?.data?.detail || '删除失败', 'error') }
+  }
+
   const handleSelectExcellent = async () => {
     try {
       await api.post(`/api/admin/phases/${viewPhase.id}/excellent`, { student_ids: selectedExcellent })
