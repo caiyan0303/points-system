@@ -53,18 +53,18 @@ export default function AdminStudents() {
 
   const showToast = (msg, type = 'success') => { setToast({ msg, type }); setTimeout(() => setToast(null), 3000) }
 
-  const filteredProjects = yearId ? allProjects.filter(p => p.year_id === parseInt(yearId)) : allProjects
+  const filteredProjects = yearId ? allProjects.filter(p => String(p.year_id) === String(yearId)) : allProjects
   const createProjects = createForm.year_id
-    ? allProjects.filter(p => p.year_id === parseInt(createForm.year_id))
+    ? allProjects.filter(p => String(p.year_id) === String(createForm.year_id))
     : allProjects
   const createGroups = createForm.project_id
-    ? groups.filter(g => g.project_id === parseInt(createForm.project_id))
+    ? groups.filter(g => String(g.project_id) === String(createForm.project_id))
     : []
   const editProjects = editForm.year_id
-    ? allProjects.filter(p => p.year_id === parseInt(editForm.year_id))
+    ? allProjects.filter(p => String(p.year_id) === String(editForm.year_id))
     : allProjects
   const editGroups = editForm.project_id
-    ? groups.filter(g => g.project_id === parseInt(editForm.project_id))
+    ? groups.filter(g => String(g.project_id) === String(editForm.project_id))
     : []
 
   const fetchStudents = () => {
