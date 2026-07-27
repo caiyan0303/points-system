@@ -5,8 +5,9 @@ import Toast from '../../components/Toast'
 import { Plus, X, Edit, Upload, FileText, Trash2 } from 'lucide-react'
 
 const CATEGORIES = [
-  '课程学习完成', '作业提交质量', '案例沟通表现', '案例输出成果',
-  '线下课参与', '团队协作贡献', '知��分享输出', '特殊贡献奖励', '其它积分'
+  '线上学习', '线上考试', '学习输出', '问卷反馈', '线下出勤',
+  '课堂互动', '课堂任务', '实践任务', '成果转化', '团队共创', '团队贡献',
+  '小组长职责', '项目贡献', '特殊调整'
 ]
 
 export default function AdminPointRules() {
@@ -19,7 +20,7 @@ export default function AdminPointRules() {
   const [editModal, setEditModal] = useState(null)
 
   const defaultForm = {
-    category: '课程学习完成', rule_name: '', default_points: '', max_points: '',
+    category: '线上学习', rule_name: '', default_points: '', max_points: '',
     applicable_projects: [], applicable_phases: [], allow_repeat: false,
     count_in_period: true, count_in_available: true, need_approval: false, description: ''
   }
@@ -52,7 +53,7 @@ export default function AdminPointRules() {
   const openEdit = (rule) => {
     setEditModal('edit')
     setForm({
-      category: rule.category || '课程学习完成',
+      category: rule.category || '线上学习',
       rule_name: rule.rule_name || rule.name || '',
       default_points: rule.default_points || '',
       max_points: rule.max_points || '',

@@ -5,9 +5,42 @@ from fastapi.responses import FileResponse, JSONResponse
 import os
 
 from database import engine, Base
+from sqlalchemy import inspect, text
 from routers import auth, admin, student, common
 
 Base.metadata.create_all(bind=engine)
+
+# SQLite create_all does not add columns to an existing table. Keep older
+# installations compatible when project scheduling fields are introduced.
+project_columns = {column["name"] for column in inspect(engine).get_columns("training_projects")}
+with engine.begin() as connection:
+    if "start_date" not in project_columns:
+        connection.execute(text("ALTER TABLE training_projects ADD COLUMN start_date DATETIME"))
+    if "end_date" not in project_columns:
+        connection.execute(text("ALTER TABLE training_projects ADD COLUMN end_date DATETIME"))
+    connection.execute(text("""
+        INSERT OR IGNORE INTO project_enrollments
+            (student_id, year_id, project_id, group_id, status, label, joined_at)
+        SELECT
+            users.id,
+            users.year_id,
+            users.project_id,
+            (
+                SELECT group_members.group_id
+                FROM group_members
+                JOIN groups ON groups.id = group_members.group_id
+                WHERE group_members.student_id = users.id
+                  AND groups.project_id = users.project_id
+                LIMIT 1
+            ),
+            '在读',
+            '首次参加',
+            CURRENT_TIMESTAMP
+        FROM users
+        WHERE users.role = 'student'
+          AND users.year_id IS NOT NULL
+          AND users.project_id IS NOT NULL
+    """))
 
 app = FastAPI(
     title="Points Management System",
@@ -29,6 +62,9 @@ app.include_router(admin.router)
 app.include_router(student.router)
 
 FRONTEND_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "frontend", "dist")
+UPLOADS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads")
+os.makedirs(UPLOADS_DIR, exist_ok=True)
+app.mount("/api/uploads", StaticFiles(directory=UPLOADS_DIR), name="uploads")
 
 
 @app.get("/api")

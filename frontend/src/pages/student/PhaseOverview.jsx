@@ -63,15 +63,16 @@ export default function StudentPhaseOverview() {
                     {expandedPhase === p.phase_id ? <ChevronDown className="w-5 h-5 text-gray-400" /> : <ChevronRight className="w-5 h-5 text-gray-400" />}
                     <div>
                       <h3 className="font-semibold text-gray-900">{p.phase_name}</h3>
+                      <p className="text-xs text-indigo-500 mt-1">{p.year_name || '-'} / {p.project_name || '-'}</p>
                       <p className="text-xs text-gray-400 mt-0.5">{p.start_date?.slice(0,10)} ~ {p.end_date?.slice(0,10)}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-6">
                     <span className={`text-xs px-2 py-0.5 rounded-full ${STATUS_COLORS[p.status] || 'bg-gray-100 text-gray-500'}`}>{p.status}</span>
-                    <div className="text-right">
+                    <button type="button" onClick={(event) => { event.stopPropagation(); togglePhase(p.phase_id) }} className="text-right rounded-lg px-3 py-2 hover:bg-indigo-50 focus:outline-none focus:ring-2 focus:ring-indigo-500" aria-label={`查看${p.phase_name}积分排名`}>
                       <p className="text-lg font-bold text-indigo-600">{p.points || 0}</p>
-                      <p className="text-xs text-gray-400">积分</p>
-                    </div>
+                      <p className="text-xs text-indigo-500">积分 · 点击查看排名</p>
+                    </button>
                     {p.rank && (
                       <div className="text-right">
                         <p className="text-lg font-bold text-gray-900">第 {p.rank} 名</p>
@@ -98,26 +99,50 @@ export default function StudentPhaseOverview() {
                       </div>
                     </div>
                   )}
-                  {phaseDetails[p.phase_id].rankings?.length > 0 && (
-                    <div className="mb-4">
-                      <h4 className="text-sm font-medium text-gray-700 mb-2">排行榜</h4>
+                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                    <div>
+                      <h4 className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-2"><Award className="w-4 h-4 text-indigo-500" />个人积分排名</h4>
                       <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
                         <table className="w-full text-sm">
-                          <thead><tr className="border-b bg-gray-50"><th className="px-3 py-2 text-left text-xs text-gray-500">排名</th><th className="px-3 py-2 text-left text-xs text-gray-500">姓名</th><th className="px-3 py-2 text-right text-xs text-gray-500">积分</th></tr></thead>
+                          <thead><tr className="border-b bg-gray-50"><th className="px-3 py-2 text-left text-xs text-gray-500">排名</th><th className="px-3 py-2 text-left text-xs text-gray-500">姓名</th><th className="px-3 py-2 text-left text-xs text-gray-500">所属小组</th><th className="px-3 py-2 text-right text-xs text-gray-500">积分</th></tr></thead>
                           <tbody>
-                            {phaseDetails[p.phase_id].rankings.slice(0, 10).map((r, i) => (
-                              <tr key={i} className="border-b border-gray-50 last:border-0">
-                                <td className="px-3 py-2 font-medium">{r.rank}</td>
-                                <td className="px-3 py-2">{r.student_name}</td>
+                            {(phaseDetails[p.phase_id].rankings || []).map((r) => (
+                              <tr key={r.student_id} className={`border-b border-gray-50 last:border-0 ${r.is_me ? 'bg-indigo-50' : ''}`}>
+                                <td className="px-3 py-2 font-medium">第 {r.rank} 名</td>
+                                <td className="px-3 py-2">{r.student_name}{r.is_me ? <span className="ml-2 text-xs text-indigo-600">我</span> : null}</td>
+                                <td className="px-3 py-2 text-gray-500">{r.group_name || '未分组'}</td>
                                 <td className="px-3 py-2 text-right font-semibold text-indigo-600">{r.total_points}</td>
                               </tr>
                             ))}
                           </tbody>
                         </table>
+                        {!phaseDetails[p.phase_id].rankings?.length && <p className="py-8 text-center text-sm text-gray-400">暂无个人排名</p>}
                       </div>
                     </div>
-                  )}
+                    <div>
+                      <h4 className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-2"><Trophy className="w-4 h-4 text-orange-500" />小组积分排名</h4>
+                      <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                        <table className="w-full text-sm">
+                          <thead><tr className="border-b bg-gray-50"><th className="px-3 py-2 text-left text-xs text-gray-500">排名</th><th className="px-3 py-2 text-left text-xs text-gray-500">小组</th><th className="px-3 py-2 text-right text-xs text-gray-500">总积分</th><th className="px-3 py-2 text-right text-xs text-gray-500">人均</th></tr></thead>
+                          <tbody>
+                            {(phaseDetails[p.phase_id].group_rankings || []).map((r) => (
+                              <tr key={r.group_id} className={`border-b border-gray-50 last:border-0 ${r.is_my_group ? 'bg-orange-50' : ''}`}>
+                                <td className="px-3 py-2 font-medium">第 {r.rank} 名</td>
+                                <td className="px-3 py-2">{r.group_name}{r.is_my_group ? <span className="ml-2 text-xs text-orange-600">我的小组</span> : null}<p className="text-xs text-gray-400">{r.member_count} 人</p></td>
+                                <td className="px-3 py-2 text-right font-semibold text-indigo-600">{r.total_points}</td>
+                                <td className="px-3 py-2 text-right text-gray-600">{r.avg_points}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                        {!phaseDetails[p.phase_id].group_rankings?.length && <p className="py-8 text-center text-sm text-gray-400">暂无小组排名</p>}
+                      </div>
+                    </div>
+                  </div>
                 </div>
+              )}
+              {expandedPhase === p.phase_id && !phaseDetails[p.phase_id] && (
+                <div className="border-t border-gray-100 p-6 text-center text-sm text-gray-400">正在加载阶段排名…</div>
               )}
             </div>
           ))}

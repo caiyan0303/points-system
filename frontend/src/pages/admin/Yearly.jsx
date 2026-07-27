@@ -1,56 +1,58 @@
-import { useState, useEffect } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import api from '../../api'
 import AppLayout from '../../components/AppLayout'
-import Toast from '../../components/Toast'
-import { Archive, ChevronDown, ChevronRight } from 'lucide-react'
+import {
+  Archive, Award, ChevronDown, ChevronRight, FolderKanban,
+  Gift, Layers, ListChecks, TrendingDown, TrendingUp, Users,
+} from 'lucide-react'
+
+const number = (value) => Number(value || 0).toLocaleString('zh-CN')
 
 export default function AdminYearly() {
   const [years, setYears] = useState([])
+  const [scopeNote, setScopeNote] = useState('')
   const [expandedYear, setExpandedYear] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-  const [toast, setToast] = useState(null)
-  const [archiveConfirm, setArchiveConfirm] = useState(null)
 
-  const showToast = (msg, type = 'success') => { setToast({ msg, type }); setTimeout(() => setToast(null), 3000) }
+  useEffect(() => {
+    api.get('/api/admin/yearly/overview')
+      .then(({ data }) => {
+        setYears(data.years || [])
+        setScopeNote(data.scope_note || '')
+        setExpandedYear(data.years?.[0]?.year_id || null)
+        setLoading(false)
+      })
+      .catch((err) => {
+        setError(err.response?.data?.detail || '年度数据加载失败')
+        setLoading(false)
+      })
+  }, [])
 
-  const fetchYears = () => {
-    setLoading(true)
-    api.get('/api/common/years')
-      .then(({ data }) => { setYears(data.items || data); setLoading(false) })
-      .catch((err) => { setError(err.response?.data?.detail || '加载失败'); setLoading(false) })
-  }
-
-  useEffect(() => { fetchYears() }, [])
-
-  const handleArchive = async (yearId) => {
-    try {
-      await api.put(`/api/common/years/${yearId}`, { status: 'archived' })
-      showToast('年度已归档')
-      setArchiveConfirm(null)
-      fetchYears()
-    } catch (err) { showToast(err.response?.data?.detail || '操作失败', 'error') }
-  }
-
-  const toggleExpand = async (yearId) => {
-    if (expandedYear === yearId) { setExpandedYear(null); return }
-    setExpandedYear(yearId)
-    // Fetch projects if not loaded
-    const year = years.find(y => y.id === yearId)
-    if (year && !year.projects) {
-      try {
-        const { data } = await api.get(`/api/common/years/${yearId}`)
-        setYears(prev => prev.map(y => y.id === yearId ? { ...y, projects: data.projects || [] } : y))
-      } catch (e) {}
-    }
-  }
+  const totals = useMemo(() => years.reduce((summary, year) => ({
+    projects: summary.projects + (year.project_count || 0),
+    students: summary.students + (year.student_count || 0),
+    earned: summary.earned + (year.earned_points || 0),
+    redemptions: summary.redemptions + (year.redemption_count || 0),
+  }), { projects: 0, students: 0, earned: 0, redemptions: 0 }), [years])
 
   return (
     <AppLayout>
-      <Toast message={toast?.msg} type={toast?.type} onClose={() => setToast(null)} />
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">���度积分</h1>
-        <p className="text-gray-500 mt-1">查看各年度积分统计</p>
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-indigo-100 text-indigo-600 flex items-center justify-center">
+            <Archive className="w-5 h-5" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">年度数据汇总</h1>
+            <p className="text-gray-500 mt-1">沉淀已归档项目的学员、阶段、积分、兑换和奖励数据</p>
+          </div>
+        </div>
+        {scopeNote && (
+          <div className="mt-4 px-4 py-3 bg-amber-50 border border-amber-100 text-amber-700 rounded-lg text-sm">
+            {scopeNote}
+          </div>
+        )}
       </div>
 
       {loading ? (
@@ -58,87 +60,150 @@ export default function AdminYearly() {
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600" />
         </div>
       ) : error ? (
-        <div className="flex items-center justify-center h-48 text-red-400">{error}</div>
+        <div className="flex items-center justify-center h-48 text-red-500">{error}</div>
       ) : years.length === 0 ? (
-        <div className="flex items-center justify-center h-48 text-gray-400">暂无年度数据</div>
+        <div className="bg-white rounded-xl border border-gray-200 py-16 text-center">
+          <Archive className="w-10 h-10 text-gray-300 mx-auto mb-3" />
+          <p className="font-medium text-gray-700">暂无可汇总的年度数据</p>
+          <p className="text-sm text-gray-400 mt-1">项目归档后，会自动出现在这里</p>
+        </div>
       ) : (
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-gray-100 bg-gray-50">
-                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 w-8"></th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">年度</th>
-                <th className="text-center px-4 py-3 text-xs font-medium text-gray-500">项目数</th>
-                <th className="text-center px-4 py-3 text-xs font-medium text-gray-500">学员数</th>
-                <th className="text-right px-4 py-3 text-xs font-medium text-gray-500">总积分</th>
-                <th className="text-center px-4 py-3 text-xs font-medium text-gray-500">状态</th>
-                <th className="text-right px-4 py-3 text-xs font-medium text-gray-500">操作</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50">
-              {years.map((y) => (
-                <>
-                  <tr key={y.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => toggleExpand(y.id)}>
-                    <td className="px-4 py-3">
-                      {expandedYear === y.id ? <ChevronDown className="w-4 h-4 text-gray-400" /> : <ChevronRight className="w-4 h-4 text-gray-400" />}
-                    </td>
-                    <td className="px-4 py-3 text-sm font-medium text-gray-900">{y.name}</td>
-                    <td className="px-4 py-3 text-sm text-gray-600 text-center">{y.project_count || 0}</td>
-                    <td className="px-4 py-3 text-sm text-gray-600 text-center">{y.student_count || 0}</td>
-                    <td className="px-4 py-3 text-sm font-semibold text-indigo-600 text-right">{y.total_points || 0}</td>
-                    <td className="px-4 py-3 text-center">
-                      <span className={`text-xs px-2 py-0.5 rounded-full ${
-                        y.status === 'archived' ? 'bg-gray-100 text-gray-500' : 'bg-green-50 text-green-600'
-                      }`}>{y.status === 'archived' ? '已归档' : '进行中'}</span>
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      {y.status !== 'archived' && (
-                        <button onClick={(e) => { e.stopPropagation(); setArchiveConfirm(y) }} className="px-3 py-1.5 text-xs bg-gray-50 text-gray-500 rounded hover:bg-gray-100">
-                          <Archive className="w-3 h-3 inline mr-1" /> 归档
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                  {expandedYear === y.id && y.projects && (
-                    <tr>
-                      <td colSpan={7} className="bg-gray-50 px-8 py-4">
-                        <div className="space-y-2">
-                          {(Array.isArray(y.projects) ? y.projects : []).map((p, pi) => (
-                            <div key={pi} className="flex items-center justify-between p-3 bg-white rounded-lg border">
-                              <div>
-                                <span className="text-sm font-medium text-gray-900">{p.name}</span>
-                                <span className="text-xs text-gray-500 ml-3">阶段: {p.phase_count || 0}</span>
-                              </div>
-                              <div className="flex items-center gap-4 text-sm">
-                                <span className="text-gray-500">学员: {p.student_count || 0}</span>
-                                <span className="font-semibold text-indigo-600">{p.total_points || 0} 分</span>
-                              </div>
-                            </div>
-                          ))}
-                          {y.projects.length === 0 && <p className="text-sm text-gray-400 py-4 text-center">暂无项目</p>}
-                        </div>
-                      </td>
-                    </tr>
-                  )}
-                </>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {archiveConfirm && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-sm w-full p-6">
-            <h3 className="text-lg font-semibold mb-2">归档年度</h3>
-            <p className="text-sm text-gray-500">确定要归档「{archiveConfirm.name}」吗？归档后将变为只读。</p>
-            <div className="flex gap-3 mt-6">
-              <button onClick={() => setArchiveConfirm(null)} className="flex-1 py-2.5 text-sm font-medium border border-gray-200 rounded-lg hover:bg-gray-50">取消</button>
-              <button onClick={() => handleArchive(archiveConfirm.id)} className="flex-1 py-2.5 text-sm font-medium bg-gray-600 text-white rounded-lg hover:bg-gray-700">确认归档</button>
-            </div>
+        <>
+          <div className="grid grid-cols-4 gap-4 mb-6">
+            <SummaryCard icon={FolderKanban} label="已归档项目" value={totals.projects} tone="indigo" />
+            <SummaryCard icon={Users} label="覆盖学员" value={totals.students} tone="blue" />
+            <SummaryCard icon={TrendingUp} label="累计获得积分" value={number(totals.earned)} tone="green" />
+            <SummaryCard icon={Gift} label="兑换申请" value={totals.redemptions} tone="orange" />
           </div>
-        </div>
+
+          <div className="space-y-4">
+            {years.map((year) => {
+              const expanded = expandedYear === year.year_id
+              const maxCategoryPoints = Math.max(...(year.categories || []).map(item => item.points || 0), 1)
+              return (
+                <section key={year.year_id} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                  <button
+                    onClick={() => setExpandedYear(expanded ? null : year.year_id)}
+                    className="w-full px-6 py-5 flex items-center gap-4 hover:bg-gray-50 text-left"
+                  >
+                    <div className="w-10 h-10 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                      {expanded ? <ChevronDown className="w-5 h-5" /> : <ChevronRight className="w-5 h-5" />}
+                    </div>
+                    <div className="min-w-[150px]">
+                      <h2 className="text-lg font-semibold text-gray-900">{year.year_name}</h2>
+                      <p className="text-xs text-gray-400 mt-0.5">
+                        已归档 {year.project_count} / 全部 {year.total_project_count} 个项目
+                      </p>
+                    </div>
+                    <div className="grid grid-cols-5 gap-7 flex-1">
+                      <CompactMetric label="学员" value={year.student_count} />
+                      <CompactMetric label="小组" value={year.group_count} />
+                      <CompactMetric label="阶段" value={year.phase_count} />
+                      <CompactMetric label="获得积分" value={number(year.earned_points)} accent />
+                      <CompactMetric label="兑换积分" value={number(year.redeemed_points)} />
+                    </div>
+                  </button>
+
+                  {expanded && (
+                    <div className="border-t border-gray-100 bg-gray-50 p-6 space-y-6">
+                      <div className="grid grid-cols-6 gap-3">
+                        <DetailMetric icon={TrendingUp} label="获得积分" value={number(year.earned_points)} color="text-green-600" />
+                        <DetailMetric icon={TrendingDown} label="扣减积分" value={number(year.deducted_points)} color="text-red-500" />
+                        <DetailMetric icon={ListChecks} label="积分记录" value={number(year.point_records)} color="text-indigo-600" />
+                        <DetailMetric icon={Gift} label="兑换次数" value={number(year.redemption_count)} color="text-orange-600" />
+                        <DetailMetric icon={Award} label="奖励发放" value={number(year.award_count)} color="text-yellow-600" />
+                        <DetailMetric icon={Layers} label="净积分" value={number(year.net_points)} color="text-blue-600" />
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-5">
+                        <div className="bg-white rounded-xl border border-gray-200 p-5">
+                          <h3 className="font-semibold text-gray-900 mb-4">积分来源分布</h3>
+                          {(year.categories || []).length === 0 ? (
+                            <p className="text-sm text-gray-400 py-8 text-center">暂无积分分类数据</p>
+                          ) : (
+                            <div className="space-y-3">
+                              {year.categories.map((item) => (
+                                <div key={item.category}>
+                                  <div className="flex items-center justify-between text-sm mb-1.5">
+                                    <span className="text-gray-600">{item.category}</span>
+                                    <span className="font-medium text-gray-900">{number(item.points)} 分 · {item.records} 条</span>
+                                  </div>
+                                  <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                                    <div className="h-full bg-indigo-500 rounded-full" style={{ width: `${Math.max((item.points / maxCategoryPoints) * 100, 4)}%` }} />
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="bg-white rounded-xl border border-gray-200 p-5">
+                          <h3 className="font-semibold text-gray-900 mb-4">归档项目明细</h3>
+                          <div className="space-y-3">
+                            {(year.projects || []).map((project) => (
+                              <div key={project.id} className="p-3 rounded-lg border border-gray-100 bg-gray-50">
+                                <div className="flex items-center justify-between mb-2">
+                                  <span className="text-sm font-medium text-gray-900">{project.name}</span>
+                                  <span className="text-sm font-semibold text-indigo-600">{number(project.earned_points)} 分</span>
+                                </div>
+                                <div className="grid grid-cols-4 gap-2 text-xs text-gray-500">
+                                  <span>{project.student_count} 学员</span>
+                                  <span>{project.group_count} 小组</span>
+                                  <span>{project.phase_count} 阶段</span>
+                                  <span>{project.point_records} 条记录</span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </section>
+              )
+            })}
+          </div>
+        </>
       )}
     </AppLayout>
+  )
+}
+
+function SummaryCard({ icon: Icon, label, value, tone }) {
+  const tones = {
+    indigo: 'bg-indigo-50 text-indigo-600',
+    blue: 'bg-blue-50 text-blue-600',
+    green: 'bg-green-50 text-green-600',
+    orange: 'bg-orange-50 text-orange-600',
+  }
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 p-5 flex items-center gap-4">
+      <div className={`w-11 h-11 rounded-xl flex items-center justify-center ${tones[tone]}`}>
+        <Icon className="w-5 h-5" />
+      </div>
+      <div>
+        <p className="text-xs text-gray-500">{label}</p>
+        <p className="text-2xl font-bold text-gray-900 mt-1">{value}</p>
+      </div>
+    </div>
+  )
+}
+
+function CompactMetric({ label, value, accent = false }) {
+  return (
+    <div>
+      <p className="text-xs text-gray-400">{label}</p>
+      <p className={`text-base font-semibold mt-1 ${accent ? 'text-indigo-600' : 'text-gray-800'}`}>{value || 0}</p>
+    </div>
+  )
+}
+
+function DetailMetric({ icon: Icon, label, value, color }) {
+  return (
+    <div className="bg-white rounded-lg border border-gray-200 p-4">
+      <Icon className={`w-4 h-4 mb-2 ${color}`} />
+      <p className="text-xs text-gray-500">{label}</p>
+      <p className={`text-lg font-bold mt-1 ${color}`}>{value}</p>
+    </div>
   )
 }

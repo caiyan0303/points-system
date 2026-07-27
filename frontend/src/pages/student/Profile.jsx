@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import api from '../../api'
 import AppLayout from '../../components/AppLayout'
 import Toast from '../../components/Toast'
-import { User, Mail, Phone, MapPin, Building, Calendar, Briefcase } from 'lucide-react'
+import { User, Mail, Phone, MapPin, Building, Calendar, Briefcase, Users } from 'lucide-react'
 
 export default function StudentProfile() {
   const [profile, setProfile] = useState(null)
@@ -60,9 +60,11 @@ export default function StudentProfile() {
     { label: '邮箱', value: profile.email || '-', icon: Mail, editable: false },
     { label: '手机', value: form.phone || '-', icon: Phone, editable: true, field: 'phone' },
     { label: '地址', value: form.address || '-', icon: MapPin, editable: true, field: 'address' },
-    { label: '部门', value: profile.department || '-', icon: Building, editable: false },
+    { label: '体系', value: profile.system || '-', icon: Building, editable: false },
+    { label: '一级部门', value: profile.level1_dept || '-', icon: Building, editable: false },
     { label: '年度', value: profile.year_name || '-', icon: Calendar, editable: false },
     { label: '培训项目', value: profile.project_name || '-', icon: Briefcase, editable: false },
+    { label: '所属小组', value: profile.group_name || '-', icon: Users, editable: false },
   ]
 
   return (
@@ -88,7 +90,9 @@ export default function StudentProfile() {
                 }`}>
                   {profile.employment_status === 'terminated' ? '已终止' : '在职'}
                 </span>
-                <span className="text-sm text-gray-400">{profile.department || ''}</span>
+                <span className="text-sm text-gray-400">
+                  {[profile.year_name, profile.project_name, profile.group_name].filter(Boolean).join(' · ')}
+                </span>
               </div>
             </div>
           </div>
@@ -124,6 +128,25 @@ export default function StudentProfile() {
               </div>
             ))}
           </div>
+
+          {profile.project_enrollments?.length > 0 && (
+            <div className="mt-6 border-t border-gray-100 pt-5">
+              <h4 className="mb-3 text-sm font-semibold text-gray-800">参与项目记录</h4>
+              <div className="space-y-2">
+                {profile.project_enrollments.map((item, index) => (
+                  <div key={`${item.year_name}-${item.project_name}-${index}`} className="rounded-lg bg-gray-50 px-4 py-3 text-sm">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-medium text-gray-900">{item.year_name} · {item.project_name}</span>
+                      {item.is_current && <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-xs text-indigo-700">当前项目</span>}
+                      {item.label && <span className="rounded-full bg-orange-100 px-2 py-0.5 text-xs text-orange-700">{item.label}</span>}
+                    </div>
+                    <p className="mt-1 text-xs text-gray-500">小组：{item.group_name || '未分组'} · 状态：{item.status || '在读'}</p>
+                    {item.remark && <p className="mt-1 text-xs text-gray-500">备注：{item.remark}</p>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {editing && (
             <div className="flex gap-3 mt-6 pt-4 border-t border-gray-100">

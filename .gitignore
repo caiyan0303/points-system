@@ -1,14 +1,17 @@
 # Python
 __pycache__/
+.venv/
 *.pyc
 *.pyo
 *.db
 *.db-journal
 backend/points_system.db
+backend/uploads/
 
 # Node
 frontend/node_modules/
 frontend/dist/
+.tmp/
 
 # IDE
 .idea/
@@ -16,3 +19,4 @@ frontend/dist/
 
 # OS
 .DS_Store
+backend/backups/
