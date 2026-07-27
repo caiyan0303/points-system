@@ -59,6 +59,36 @@ const requireUser = async (request, role) => {
 }
 const numberOrNull = (value) => value === '' || value == null ? null : Number(value)
 const isoOrNull = (value) => value || null
+const intFlag = (value, fallback = 0) => value == null ? fallback : (value ? 1 : 0)
+const phaseStatusFor = (phase) => {
+  if (phase.status === '已归档') return phase.status
+  if (!phase.start_date || !phase.end_date) return phase.status || '待开放'
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai' }).format(new Date())
+  const start = new Date(phase.start_date).toISOString().slice(0, 10)
+  const end = new Date(phase.end_date).toISOString().slice(0, 10)
+  if (today < start) return '待开放'
+  if (today <= end) return '进行中'
+  return '已关闭'
+}
+
+const phaseSummary = async (phase) => {
+  const status = phaseStatusFor(phase)
+  if (status !== phase.status) {
+    await rows('UPDATE phases SET status=$1 WHERE id=$2', [status, phase.id])
+  }
+  const stats = await one(`SELECT
+    COUNT(DISTINCT pp.student_id)::int AS participant_count,
+    (SELECT COUNT(*)::int FROM phase_groups pg WHERE pg.phase_id=$1) AS group_count,
+    COALESCE((SELECT SUM(pt.points)::int FROM points pt WHERE pt.phase_id=$1 AND pt.status IN ('有效','active')),0) AS total_points
+    FROM phase_participants pp WHERE pp.phase_id=$1`, [phase.id])
+  return {
+    ...phase,
+    status,
+    participant_count: Number(stats?.participant_count || 0),
+    group_count: Number(stats?.group_count || 0),
+    total_points: Number(stats?.total_points || 0),
+  }
+}
 
 async function authRoutes(request, pathname) {
   if (pathname === '/api/auth/login' && request.method === 'POST') {
@@ -173,6 +203,108 @@ async function adminCoreRoutes(request, pathname, url) {
       pending_redemptions:pendingRedemptions,completed_redemptions:completedRedemptions,low_stock_products:lowStockProducts,
       phase_overview:phaseOverview,top_rankings:[],
     })
+  }
+  if (pathname === '/api/admin/phases' && request.method === 'GET') {
+    const yearId = numberOrNull(url.searchParams.get('year_id'))
+    const projectId = numberOrNull(url.searchParams.get('project_id'))
+    const phases = await rows(`SELECT ph.*,y.name AS year_name,p.name AS project_name
+      FROM phases ph
+      LEFT JOIN academic_years y ON y.id=ph.year_id
+      LEFT JOIN training_projects p ON p.id=ph.project_id
+      WHERE ($1::bigint IS NULL OR ph.year_id=$1) AND ($2::bigint IS NULL OR ph.project_id=$2)
+      ORDER BY ph.id DESC`, [yearId, projectId])
+    return json(await Promise.all(phases.map(phaseSummary)))
+  }
+  if (pathname === '/api/admin/phases' && request.method === 'POST') {
+    const input = await body(request)
+    const name = String(input.name || '').trim()
+    const yearId = numberOrNull(input.year_id)
+    const projectId = numberOrNull(input.project_id)
+    const startDate = isoOrNull(input.start_date)
+    const endDate = isoOrNull(input.end_date)
+    if (!name || !yearId || !projectId) return json({detail:'请填写阶段名称、年度和培训项目'},400)
+    if (!startDate || !endDate) return json({detail:'请设置阶段开始和结束日期'},400)
+    if (startDate > endDate) return json({detail:'阶段结束日期不能早于开始日期'},400)
+    const project = await one('SELECT * FROM training_projects WHERE id=$1 AND year_id=$2',[projectId,yearId])
+    if (!project) return json({detail:'培训项目不存在，或项目与年度不匹配'},404)
+    const projectStart = project.start_date ? new Date(project.start_date).toISOString().slice(0,10) : null
+    const projectEnd = project.end_date ? new Date(project.end_date).toISOString().slice(0,10) : null
+    if (projectStart && startDate < projectStart) return json({detail:'阶段开始日期不能早于项目开始日期'},400)
+    if (projectEnd && endDate > projectEnd) return json({detail:'阶段结束日期不能晚于项目结束日期'},400)
+    const overlap = await one(`SELECT name FROM phases WHERE project_id=$1 AND status<>'已归档'
+      AND start_date::date<=$2::date AND end_date::date>=$3::date LIMIT 1`,[projectId,endDate,startDate])
+    if (overlap) return json({detail:`阶段时间与“${overlap.name}”重叠`},400)
+    const created = await one(`INSERT INTO phases(name,year_id,project_id,start_date,end_date,description,status,
+      allow_ranking,allow_excellent,excellent_count,prize_description)
+      VALUES($1,$2,$3,$4,$5,$6,'待开放',$7,$8,$9,$10) RETURNING *`,[
+      name,yearId,projectId,startDate,endDate,input.description||null,intFlag(input.allow_ranking,1),
+      intFlag(input.allow_excellent),Number(input.excellent_count||0),input.prize_description||null,
+    ])
+    return json(await phaseSummary({...created,year_name:(await one('SELECT name FROM academic_years WHERE id=$1',[yearId]))?.name||'',project_name:project.name}),201)
+  }
+  const phaseMatch = pathname.match(/^\/api\/admin\/phases\/(\d+)(?:\/(archive|close|excellent))?$/)
+  if (phaseMatch) {
+    const phaseId = Number(phaseMatch[1])
+    const action = phaseMatch[2]
+    const phase = await one(`SELECT ph.*,y.name AS year_name,p.name AS project_name FROM phases ph
+      LEFT JOIN academic_years y ON y.id=ph.year_id LEFT JOIN training_projects p ON p.id=ph.project_id WHERE ph.id=$1`,[phaseId])
+    if (!phase) return json({detail:'阶段不存在'},404)
+    if (!action && request.method === 'GET') {
+      const summary = await phaseSummary(phase)
+      const participants = await rows(`SELECT u.id AS student_id,u.real_name AS student_name,u.department,g.name AS group_name,
+        pp.is_excellent,pp.prize_given,COALESCE(SUM(pt.points) FILTER (WHERE pt.status IN ('有效','active')),0)::int AS total_points
+        FROM phase_participants pp JOIN users u ON u.id=pp.student_id LEFT JOIN groups g ON g.id=pp.group_id
+        LEFT JOIN points pt ON pt.phase_id=pp.phase_id AND pt.student_id=pp.student_id
+        WHERE pp.phase_id=$1 GROUP BY u.id,u.real_name,u.department,g.name,pp.is_excellent,pp.prize_given ORDER BY u.id`,[phaseId])
+      const phaseGroups = await rows(`SELECT g.id AS group_id,g.name AS group_name,COUNT(DISTINCT gm.student_id)::int AS member_count,
+        COALESCE(SUM(pt.points) FILTER (WHERE pt.status IN ('有效','active')),0)::int AS total_points
+        FROM phase_groups pg JOIN groups g ON g.id=pg.group_id LEFT JOIN group_members gm ON gm.group_id=g.id
+        LEFT JOIN points pt ON pt.phase_id=pg.phase_id AND pt.student_id=gm.student_id
+        WHERE pg.phase_id=$1 GROUP BY g.id,g.name ORDER BY g.id`,[phaseId])
+      const rankings = [...participants].sort((a,b)=>Number(b.total_points)-Number(a.total_points)).map((item,index)=>({...item,rank:index+1}))
+      const groupRankings = phaseGroups.map(group=>({...group,avg_points:group.member_count ? Math.round(Number(group.total_points)*100/group.member_count)/100 : 0}))
+        .sort((a,b)=>b.avg_points-a.avg_points).map((item,index)=>({...item,rank:index+1}))
+      return json({...summary,participants,phase_groups:phaseGroups,rankings,group_rankings:groupRankings,
+        excellent_members:participants.filter(item=>Number(item.is_excellent)===1)})
+    }
+    if (!action && request.method === 'PUT') {
+      const input = await body(request)
+      const merged = {...phase,...input}
+      const startDate = isoOrNull(merged.start_date); const endDate = isoOrNull(merged.end_date)
+      if (!startDate || !endDate) return json({detail:'请设置阶段开始和结束日期'},400)
+      if (startDate > endDate) return json({detail:'阶段结束日期不能早于开始日期'},400)
+      const overlap = await one(`SELECT name FROM phases WHERE id<>$1 AND project_id=$2 AND status<>'已归档'
+        AND start_date::date<=$3::date AND end_date::date>=$4::date LIMIT 1`,[phaseId,phase.project_id,endDate,startDate])
+      if (overlap) return json({detail:`阶段时间与“${overlap.name}”重叠`},400)
+      const updated = await one(`UPDATE phases SET name=$1,start_date=$2,end_date=$3,description=$4,allow_ranking=$5,
+        allow_excellent=$6,excellent_count=$7,prize_description=$8 WHERE id=$9 RETURNING *`,[
+        String(merged.name||'').trim(),startDate,endDate,merged.description||null,intFlag(merged.allow_ranking,1),
+        intFlag(merged.allow_excellent),Number(merged.excellent_count||0),merged.prize_description||null,phaseId,
+      ])
+      return json(await phaseSummary({...updated,year_name:phase.year_name,project_name:phase.project_name}))
+    }
+    if (action === 'archive' && request.method === 'PUT') {
+      await rows("UPDATE phases SET status='已归档' WHERE id=$1",[phaseId])
+      return json({message:`阶段“${phase.name}”已归档`})
+    }
+    if (action === 'close' && request.method === 'PUT') {
+      await rows("UPDATE phases SET status='已关闭' WHERE id=$1",[phaseId])
+      return json({message:`阶段“${phase.name}”已关闭`})
+    }
+    if (action === 'excellent' && request.method === 'POST') {
+      if (!Number(phase.allow_excellent)) return json({detail:'该阶段不允许评选优秀成员'},400)
+      const input = await body(request); const studentIds = Array.isArray(input.student_ids) ? input.student_ids.map(Number) : []
+      if (studentIds.length > Number(phase.excellent_count||0)) return json({detail:`最多可选择 ${phase.excellent_count||0} 名优秀成员`},400)
+      await rows('UPDATE phase_participants SET is_excellent=0 WHERE phase_id=$1',[phaseId])
+      if (studentIds.length) await rows('UPDATE phase_participants SET is_excellent=1 WHERE phase_id=$1 AND student_id=ANY($2::bigint[])',[phaseId,studentIds])
+      return json({message:'优秀成员已更新'})
+    }
+    if (!action && request.method === 'DELETE') {
+      await rows('UPDATE points SET phase_id=NULL WHERE phase_id=$1',[phaseId])
+      await rows('UPDATE prize_awards SET phase_id=NULL WHERE phase_id=$1',[phaseId])
+      await rows('DELETE FROM phases WHERE id=$1',[phaseId])
+      return json({message:`阶段“${phase.name}”已删除`})
+    }
   }
   if (pathname === '/api/admin/students' && request.method === 'GET') {
     const page = Math.max(1, Number(url.searchParams.get('page') || 1))
