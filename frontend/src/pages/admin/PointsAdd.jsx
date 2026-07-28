@@ -476,7 +476,7 @@ export default function AdminPointsAdd() {
     <AppLayout>
       <Toast message={toast?.msg} type={toast?.type} onClose={() => setToast(null)} />
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">积分录入</h1>
+        <h1 className="text-2xl font-bold text-gray-900">个人积分录入</h1>
         <p className="text-gray-500 mt-1">为学员录入积分</p>
       </div>
 

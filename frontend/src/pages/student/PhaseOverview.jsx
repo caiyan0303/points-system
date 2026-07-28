@@ -19,21 +19,21 @@ export default function StudentPhaseOverview() {
   const togglePhase = async (phaseId) => {
     if (expandedPhase === phaseId) { setExpandedPhase(null); return }
     setExpandedPhase(phaseId)
-    if (!phaseDetails[phaseId]) {
-      try {
-        const { data } = await api.get(`/api/student/phases/${phaseId}`)
-        setPhaseDetails(prev => ({ ...prev, [phaseId]: data }))
-      } catch (e) {
-        setPhaseDetails(prev => ({
-          ...prev,
-          [phaseId]: {
-            rankings: [],
-            group_rankings: [],
-            category_details: [],
-            load_error: e.response?.data?.detail || '阶段排名加载失败，请稍后重试',
-          },
-        }))
-      }
+    setPhaseDetails(prev => ({ ...prev, [phaseId]: { ...(prev[phaseId] || {}), loading: true, load_error: '' } }))
+    try {
+      const { data } = await api.get(`/api/student/phases/${phaseId}`, { params: { refresh: Date.now() } })
+      setPhaseDetails(prev => ({ ...prev, [phaseId]: { ...data, loading: false } }))
+    } catch (e) {
+      setPhaseDetails(prev => ({
+        ...prev,
+        [phaseId]: {
+          rankings: [],
+          group_rankings: [],
+          category_details: [],
+          loading: false,
+          load_error: e.response?.data?.detail || '阶段排名加载失败，请稍后重试',
+        },
+      }))
     }
   }
 
@@ -96,6 +96,11 @@ export default function StudentPhaseOverview() {
 
               {expandedPhase === p.phase_id && phaseDetails[p.phase_id] && (
                 <div className="border-t border-gray-100 p-5 bg-gray-50/50">
+                  {phaseDetails[p.phase_id].loading && (
+                    <div className="mb-4 rounded-lg border border-indigo-100 bg-indigo-50 px-4 py-3 text-sm text-indigo-600">
+                      正在同步最新个人积分和团队积分…
+                    </div>
+                  )}
                   {phaseDetails[p.phase_id].load_error && (
                     <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
                       {phaseDetails[p.phase_id].load_error}

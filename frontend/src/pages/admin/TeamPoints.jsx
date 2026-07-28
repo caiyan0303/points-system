@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Download, FileSpreadsheet, Trash2, Upload, UsersRound, X } from 'lucide-react'
+import { Download, FileSpreadsheet, Upload, UsersRound, X } from 'lucide-react'
 import * as XLSX from 'xlsx'
 import api from '../../api'
 import AppLayout from '../../components/AppLayout'
@@ -30,7 +30,6 @@ export default function AdminTeamPoints() {
   const [projects, setProjects] = useState([])
   const [groups, setGroups] = useState([])
   const [phases, setPhases] = useState([])
-  const [records, setRecords] = useState([])
   const [toast, setToast] = useState(null)
   const [submitting, setSubmitting] = useState(false)
   const [importing, setImporting] = useState(false)
@@ -42,7 +41,6 @@ export default function AdminTeamPoints() {
   const visibleGroups = useMemo(() => form.project_id ? groups.filter(item => String(item.project_id) === String(form.project_id)) : [], [form.project_id, groups])
   const visiblePhases = useMemo(() => form.project_id ? phases.filter(item => String(item.project_id) === String(form.project_id)) : [], [form.project_id, phases])
 
-  const loadRecords = () => api.get('/api/admin/team-points', { params: { page_size: 100 } }).then(({ data }) => setRecords(data.items || []))
   useEffect(() => {
     Promise.all([
       api.get('/api/common/years'), api.get('/api/common/projects'), api.get('/api/admin/groups'), api.get('/api/admin/phases'),
@@ -52,7 +50,6 @@ export default function AdminTeamPoints() {
       setGroups(groupRes.data.items || groupRes.data)
       setPhases(phaseRes.data.items || phaseRes.data)
     }).catch(() => showToast('基础数据加载失败', 'error'))
-    loadRecords().catch(() => showToast('团队积分流水加载失败', 'error'))
   }, [])
 
   const changeCategory = (category) => setForm(current => ({ ...current, category, points: category === '特殊调整' ? '' : String(POINT_OPTIONS[category][0]) }))
@@ -64,14 +61,8 @@ export default function AdminTeamPoints() {
       await api.post('/api/admin/team-points', { ...form, year_id: Number(form.year_id), project_id: Number(form.project_id), phase_id: form.phase_id ? Number(form.phase_id) : null, group_id: Number(form.group_id), points: Number(form.points), task_key: form.item_name })
       showToast('团队积分已录入，小组排名已自动更新')
       setForm(current => ({ ...current, item_name: '', source_note: '', remark: '' }))
-      await loadRecords()
     } catch (err) { showToast(err.response?.data?.detail || '团队积分录入失败', 'error') }
     finally { setSubmitting(false) }
-  }
-  const remove = async (record) => {
-    if (!confirm(`确定删除“${record.group_name}”的团队积分“${record.item_name}”吗？`)) return
-    try { await api.delete(`/api/admin/team-points/${record.id}`); showToast('团队积分已删除，排名已自动重算'); await loadRecords() }
-    catch (err) { showToast(err.response?.data?.detail || '删除失败', 'error') }
   }
 
   const downloadTemplate = () => {
@@ -144,7 +135,6 @@ export default function AdminTeamPoints() {
       const failed = data.errors?.length || 0
       showToast(`成功导入 ${data.created || 0} 条${failed ? `，${failed} 条未导入` : ''}`, failed ? 'error' : 'success')
       setImportPreview(null)
-      await loadRecords()
     } catch (error) {
       showToast(error.response?.data?.detail || '批量导入失败', 'error')
     } finally {
@@ -155,7 +145,7 @@ export default function AdminTeamPoints() {
   return <AppLayout>
     <Toast message={toast?.msg} type={toast?.type} onClose={() => setToast(null)} />
     <div className="mb-6">
-      <h1 className="text-2xl font-bold text-gray-900">团队积分</h1>
+      <h1 className="text-2xl font-bold text-gray-900">团队积分录入</h1>
       <p className="text-gray-500 mt-1">团队积分只进入小组账户；团队最终得分＝成员个人积分合计＋团队积分</p>
     </div>
     <div className="bg-white rounded-xl border border-gray-200 p-6 mb-6">
@@ -200,11 +190,5 @@ export default function AdminTeamPoints() {
         <div className="px-6 py-4 border-t flex justify-end gap-3"><button onClick={() => setImportPreview(null)} className="px-4 py-2 rounded-lg border text-sm">取消</button><button disabled={importing || !importPreview.valid.length} onClick={confirmImport} className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm disabled:opacity-50">{importing ? '导入中…' : `确认导入 ${importPreview.valid.length} 条`}</button></div>
       </div>
     </div>}
-    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-      <div className="px-5 py-4 border-b"><h2 className="font-semibold">团队积分流水</h2></div>
-      <div className="overflow-x-auto"><table className="w-full text-sm"><thead className="bg-gray-50 text-gray-500"><tr><th className="px-4 py-3 text-left">小组</th><th className="px-4 py-3 text-left">项目 / 阶段</th><th className="px-4 py-3 text-left">分类</th><th className="px-4 py-3 text-left">积分事项</th><th className="px-4 py-3 text-right">团队积分</th><th className="px-4 py-3 text-left">获得时间</th><th className="px-4 py-3 text-center">操作</th></tr></thead>
-        <tbody className="divide-y">{records.map(r => <tr key={r.id}><td className="px-4 py-3 font-medium">{r.group_name}</td><td className="px-4 py-3 text-gray-500">{r.project_name || '-'} / {r.phase_name || '项目级'}</td><td className="px-4 py-3">{r.category}</td><td className="px-4 py-3">{r.item_name}</td><td className={`px-4 py-3 text-right font-semibold ${Number(r.points) >= 0 ? 'text-green-600' : 'text-red-600'}`}>{Number(r.points) > 0 ? '+' : ''}{r.points}</td><td className="px-4 py-3 text-gray-500">{r.obtained_date?.slice(0, 10)}</td><td className="px-4 py-3 text-center"><button onClick={() => remove(r)} className="p-1.5 rounded bg-red-50 text-red-500"><Trash2 className="w-4 h-4" /></button></td></tr>)}</tbody>
-      </table>{!records.length && <p className="py-10 text-center text-sm text-gray-400">暂无团队积分记录</p>}</div>
-    </div>
   </AppLayout>
 }
