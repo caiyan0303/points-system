@@ -484,6 +484,14 @@ const validPointValues = (category, accountType) => {
     '结营任务':[5,15], '小组长职责':[10],
   }[category] || []
 }
+async function recalculateTeamSubmissionScores(projectId, phaseId, category, taskKey) {
+  if (!['线上案例沟通','线上案例输出'].includes(category)) return
+  const submissions=await rows(`SELECT id FROM team_points WHERE project_id=$1 AND COALESCE(phase_id,0)=COALESCE($2,0) AND category=$3 AND task_key=$4 AND status IN ('有效','active') ORDER BY obtained_date ASC,id ASC`,[projectId,phaseId,category,taskKey])
+  for(const [index,submission] of submissions.entries()){
+    const score=index<2?20:index<4?15:10
+    await rows('UPDATE team_points SET points=$1 WHERE id=$2',[score,submission.id])
+  }
+}
 
 async function adminExtendedRoutes(request, pathname, url) {
   const admin = await requireUser(request,'admin'); if (admin instanceof Response) return admin
@@ -664,12 +672,10 @@ async function adminExtendedRoutes(request, pathname, url) {
     if(category==='特殊调整'&&!remark)return json({detail:'团队特殊调整必须填写调整原因'},400)
     if(category!=='特殊调整'&&await one("SELECT id FROM team_points WHERE group_id=$1 AND project_id=$2 AND COALESCE(phase_id,0)=COALESCE($3,0) AND category=$4 AND task_key=$5 AND status IN ('有效','active') LIMIT 1",[groupId,projectId,phaseId,category,taskKey]))return json({detail:'同一任务、同一小组只能计分一次'},409)
     if(category==='阶段案例评优'&&await one("SELECT id FROM team_points WHERE project_id=$1 AND phase_id=$2 AND category='阶段案例评优' AND task_key=$3 AND status IN ('有效','active') LIMIT 1",[projectId,phaseId,taskKey]))return json({detail:'同一阶段的同一案例评优只能有一个第一名小组'},409)
-    if(['线上案例沟通','线上案例输出'].includes(category)){
-      const submitted=Number((await one("SELECT COUNT(*)::int AS count FROM team_points WHERE project_id=$1 AND COALESCE(phase_id,0)=COALESCE($2,0) AND category=$3 AND task_key=$4 AND status IN ('有效','active')",[projectId,phaseId,category,taskKey]))?.count||0)
-      points=submitted<2?20:submitted<4?15:10
-    }
-    const record=await one(`INSERT INTO team_points(record_number,group_id,admin_id,year_id,project_id,phase_id,points,category,item_name,task_key,data_source,source_note,remark,status,obtained_date)
+    let record=await one(`INSERT INTO team_points(record_number,group_id,admin_id,year_id,project_id,phase_id,points,category,item_name,task_key,data_source,source_note,remark,status,obtained_date)
       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'有效',$14) RETURNING *`,[`TP${Date.now()}${randomBytes(3).toString('hex')}`,groupId,admin.id,numberOrNull(input.year_id)||group.year_id,projectId,phaseId,points,category,itemName,taskKey,input.data_source||'单个录入',input.source_note||null,remark||null,input.obtained_date||new Date().toISOString()])
+    await recalculateTeamSubmissionScores(projectId,phaseId,category,taskKey)
+    record=await one('SELECT * FROM team_points WHERE id=$1',[record.id])
     if(phaseId)await rows('INSERT INTO phase_groups(phase_id,group_id) VALUES($1,$2) ON CONFLICT DO NOTHING',[phaseId,groupId])
     return json(record,201)
   }
@@ -680,7 +686,26 @@ async function adminExtendedRoutes(request, pathname, url) {
     const items=await rows(`SELECT tp.*,g.name AS group_name,y.name AS year_name,p.name AS project_name,ph.name AS phase_name,u.real_name AS admin_name FROM team_points tp JOIN groups g ON g.id=tp.group_id LEFT JOIN academic_years y ON y.id=tp.year_id LEFT JOIN training_projects p ON p.id=tp.project_id LEFT JOIN phases ph ON ph.id=tp.phase_id LEFT JOIN users u ON u.id=tp.admin_id WHERE ${where} ORDER BY tp.id DESC LIMIT $5 OFFSET $6`,[...args,pageSize,offset])
     return json({items,total,page,page_size:pageSize,total_pages:Math.max(1,Math.ceil(total/pageSize))})
   }
-  const teamPointDelete=pathname.match(/^\/api\/admin\/team-points\/(\d+)$/);if(teamPointDelete&&request.method==='DELETE'){await rows('DELETE FROM team_points WHERE id=$1',[Number(teamPointDelete[1])]);return json({message:'团队积分已删除'})}
+  if(pathname==='/api/admin/team-points/import'&&request.method==='POST'){
+    const input=await body(request);const source=Array.isArray(input)?input:(input.records||[]);const result={created:0,errors:[]}
+    const records=[...source].sort((a,b)=>String(a.obtained_date||'').localeCompare(String(b.obtained_date||'')))
+    for(const [index,record] of records.entries()){
+      try{
+        const fake=new Request(request.url,{method:'POST',headers:request.headers,body:JSON.stringify({...record,data_source:record.data_source||'Excel导入'})})
+        const response=await adminExtendedRoutes(fake,'/api/admin/team-points',url)
+        if(response.status>=400)throw new Error((await response.json()).detail||'导入失败')
+        result.created++
+      }catch(error){result.errors.push({row:index+2,detail:error.message})}
+    }
+    return json(result)
+  }
+  const teamPointDelete=pathname.match(/^\/api\/admin\/team-points\/(\d+)$/);if(teamPointDelete&&request.method==='DELETE'){
+    const id=Number(teamPointDelete[1]),record=await one('SELECT project_id,phase_id,category,task_key FROM team_points WHERE id=$1',[id])
+    if(!record)return json({detail:'团队积分记录不存在'},404)
+    await rows('DELETE FROM team_points WHERE id=$1',[id])
+    await recalculateTeamSubmissionScores(record.project_id,record.phase_id,record.category,record.task_key)
+    return json({message:'团队积分已删除'})
+  }
   if ((pathname === '/api/admin/points/batch'||pathname === '/api/admin/points/import')&&request.method==='POST') {
     const input=await body(request); const records=Array.isArray(input)?input:(input.records||[]); const result={created:0,errors:[]}
     for (const [index,record] of records.entries()) { try { const fake=new Request(request.url,{method:'POST',headers:request.headers,body:JSON.stringify(record)}); const response=await adminExtendedRoutes(fake,'/api/admin/points',url); if(response.status>=400) throw new Error((await response.json()).detail); result.created++ } catch(error){result.errors.push({row:index+1,detail:error.message})} }
