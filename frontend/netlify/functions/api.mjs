@@ -175,7 +175,9 @@ async function commonRoutes(request, pathname) {
   if (pathname === '/api/common/projects/manage' && request.method === 'GET') {
     const projects = await rows(`SELECT p.*, y.name AS year_name,
       (SELECT COUNT(*)::int FROM phases ph WHERE ph.project_id=p.id) AS phase_count,
-      (SELECT COUNT(*)::int FROM project_enrollments pe WHERE pe.project_id=p.id) AS student_count
+      (SELECT COUNT(*)::int FROM project_enrollments pe WHERE pe.project_id=p.id) AS student_count,
+      (SELECT COUNT(*)::int FROM groups g WHERE g.project_id=p.id) AS group_count,
+      COALESCE((SELECT SUM(pt.points)::int FROM points pt WHERE pt.project_id=p.id AND pt.status IN ('有效','active')),0) AS total_points
       FROM training_projects p JOIN academic_years y ON y.id=p.year_id ORDER BY p.year_id DESC,p.id DESC`)
     return json(projects)
   }

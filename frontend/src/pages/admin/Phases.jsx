@@ -13,6 +13,7 @@ const STATUS_COLORS = {
   "已关闭": 'bg-gray-100 text-gray-500',
   "已归档": 'bg-gray-100 text-gray-400'
 }
+const formatDate = (value) => value ? String(value).slice(0, 10) : '-'
 
 export default function AdminPhases({ embedded = false, initialProjectId = '' }) {
   const [phases, setPhases] = useState([])
@@ -151,7 +152,7 @@ export default function AdminPhases({ embedded = false, initialProjectId = '' })
                 <span className={`text-xs px-2 py-0.5 rounded-full ${STATUS_COLORS[viewPhase.status] || 'bg-gray-100 text-gray-500'}`}>
                   {STATUS_LABELS[viewPhase.status] || viewPhase.status}
                 </span>
-                <span className="text-sm text-gray-500">{viewPhase.start_date} ~ {viewPhase.end_date}</span>
+                <span className="text-sm text-gray-500">{formatDate(viewPhase.start_date)} ~ {formatDate(viewPhase.end_date)}</span>
                 <button onClick={() => setEditForm({ name: viewPhase.name, start_date: viewPhase.start_date?.slice(0,10) || '', end_date: viewPhase.end_date?.slice(0,10) || '', description: viewPhase.description || '', allow_ranking: viewPhase.allow_ranking, allow_excellent: viewPhase.allow_excellent, excellent_count: viewPhase.excellent_count, prize_description: viewPhase.prize_description || '' })} className="p-1.5 hover:bg-gray-100 rounded-lg">
                   <Edit className="w-4 h-4 text-gray-500" />
                 </button>
@@ -416,7 +417,7 @@ export default function AdminPhases({ embedded = false, initialProjectId = '' })
                       <tr key={p.id} onClick={() => openDetail(p)} className="cursor-pointer hover:bg-indigo-50/40">
                         <td className="px-4 py-3 text-sm font-semibold text-gray-900">{p.name}</td>
                         <td className="px-4 py-3 text-sm text-gray-500"><div>{p.year_name || '-'}</div><div className="mt-0.5 text-xs text-gray-400">{p.project_name || '-'}</div></td>
-                        <td className="px-4 py-3 text-sm text-gray-500"><span className="inline-flex items-center gap-1.5"><Calendar className="h-3.5 w-3.5" />{p.start_date} 至 {p.end_date}</span></td>
+                        <td className="px-4 py-3 text-sm text-gray-500"><span className="inline-flex items-center gap-1.5"><Calendar className="h-3.5 w-3.5" />{formatDate(p.start_date)} 至 {formatDate(p.end_date)}</span></td>
                         <td className="px-4 py-3 text-right text-sm text-gray-700">{p.participant_count ?? p.total_students ?? 0} 人</td>
                         <td className="px-4 py-3 text-right text-sm text-gray-700">{p.group_count || 0} 组</td>
                         <td className="px-4 py-3 text-right text-sm font-medium text-indigo-600">{p.total_points || 0}</td>
