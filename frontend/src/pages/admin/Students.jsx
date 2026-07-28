@@ -47,8 +47,8 @@ export default function AdminStudents() {
   const [batchPreview, setBatchPreview] = useState(null)
 
   const [pointForm, setPointForm] = useState({ points: '', category: '线上学习', description: '', phase_id: '' })
-  const [createForm, setCreateForm] = useState({ real_name: '', email: '', phone: '', department: '', system: '', level1_dept: '', year_id: '', project_id: '', group_id: '', group_name: '', address: '' })
-  const [editForm, setEditForm] = useState({ real_name: '', email: '', phone: '', address: '', department: '', system: '', level1_dept: '', year_id: '', project_id: '', group_id: '', group_name: '', employment_status: '在职', account_status: '启用' })
+  const [createForm, setCreateForm] = useState({ real_name: '', email: '', phone: '', department: '', system: '', level1_dept: '', position: '', year_id: '', project_id: '', group_id: '', group_name: '', address: '' })
+  const [editForm, setEditForm] = useState({ real_name: '', email: '', phone: '', address: '', department: '', system: '', level1_dept: '', position: '', year_id: '', project_id: '', group_id: '', group_name: '', employment_status: '在职', account_status: '启用' })
 
   const showToast = (msg, type = 'success') => { setToast({ msg, type }); setTimeout(() => setToast(null), 3000) }
 
@@ -160,7 +160,7 @@ export default function AdminStudents() {
       }
       const { data } = await api.post('/api/admin/students', payload)
       showToast(data.message || '学员创建成功')
-      setCreateModal(false); setCreateForm({ real_name: '', email: '', phone: '', department: '', system: '', level1_dept: '', year_id: '', project_id: '', group_id: '', group_name: '', address: '' })
+      setCreateModal(false); setCreateForm({ real_name: '', email: '', phone: '', department: '', system: '', level1_dept: '', position: '', year_id: '', project_id: '', group_id: '', group_name: '', address: '' })
       api.get('/api/admin/groups').then(({ data: groupData }) => setGroups(groupData || []))
       fetchStudents()
     } catch (err) { showToast(err.response?.data?.detail || '创建失败', 'error') }
@@ -169,7 +169,7 @@ export default function AdminStudents() {
   // Edit student
   const openEdit = (s) => {
     setEditModal(s)
-    setEditForm({ real_name: s.real_name, email: s.email || '', phone: s.phone || '', address: s.address || '', department: s.department || '', system: s.system || '', level1_dept: s.level1_dept || '', year_id: s.year_id || '', project_id: s.project_id || '', group_id: s.group_id || '', group_name: s.group_name || '', employment_status: s.employment_status, account_status: s.account_status })
+    setEditForm({ real_name: s.real_name, email: s.email || '', phone: s.phone || '', address: s.address || '', department: s.department || '', system: s.system || '', level1_dept: s.level1_dept || '', position: s.position || '', year_id: s.year_id || '', project_id: s.project_id || '', group_id: s.group_id || '', group_name: s.group_name || '', employment_status: s.employment_status, account_status: s.account_status })
   }
   const handleEdit = async () => {
     try { await api.put(`/api/admin/students/${editModal.id}`, {...editForm, year_id: editForm.year_id || null, project_id: editForm.project_id || null, group_id: editForm.group_id || null}); showToast('已更新'); setEditModal(null); api.get('/api/admin/groups').then(({ data }) => setGroups(data || [])); fetchStudents() }
@@ -218,8 +218,8 @@ export default function AdminStudents() {
         }
                 // 归一化字段名（中文 → 英文）
         const fieldMap = {
-          '姓名': 'real_name', '邮箱': 'email', '手机': 'phone', '地址': 'address', '收货地址': 'address',
-          '部门': 'department', '体系': 'system', '一级部门': 'level1_dept',
+          '姓名': 'real_name', '邮箱': 'email', '手机': 'phone', '电话': 'phone', '地址': 'address', '收货地址': 'address',
+          '部门': 'department', '体系': 'system', '一级部门': 'level1_dept', '职位信息': 'position', '职位': 'position',
           '所属年度': 'year_name', '培训项目': 'project_name', '所属小组': 'group_name',
           '项目标注': 'enrollment_label', '备注': 'enrollment_remark',
           '在职状态': 'employment_status', '账号状态': 'account_status',
@@ -257,15 +257,12 @@ export default function AdminStudents() {
     } catch (err) { showToast(err.response?.data?.detail || '导入失败', 'error') }
   }
 
-  // Template download — Excel format
+  // Download the maintained Excel template from the public assets.
   const downloadTemplate = () => {
-    const headers = ['姓名', '所属年度', '培训项目', '所属小组', '体系', '一级部门', '邮箱', '收货地址', '在职状态']
-    const example = ['张三', '2026年度', '优才计划', '第一组', '研发体系', '技术中心', 'zhang@example.com', '北京市XX路', '在职']
-    const ws = XLSX.utils.aoa_to_sheet([headers, example])
-    ws['!cols'] = headers.map(() => ({ wch: 16 }))
-    const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb, ws, '学员导入模板')
-    XLSX.writeFile(wb, '学员导入模板.xlsx')
+    const link = document.createElement('a')
+    link.href = '/templates/学员批量导入模板.xlsx'
+    link.download = '学员批量导入模板.xlsx'
+    link.click()
   }
 
   return (
@@ -295,7 +292,7 @@ export default function AdminStudents() {
         <div className="flex items-center gap-3 flex-wrap">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input type="text" value={keyword} onChange={(e) => setKeyword(e.target.value)} placeholder="搜索姓名、体系、邮箱..." className="w-48 pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500" />
+            <input type="text" value={keyword} onChange={(e) => setKeyword(e.target.value)} placeholder="搜索姓名、部门、职位..." className="w-48 pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500" />
           </div>
           <select value={yearId} onChange={(e) => { setYearId(e.target.value); setProjectId('') }} className="px-3 py-2.5 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500">
             <option value="">所有年度</option>
@@ -366,6 +363,7 @@ export default function AdminStudents() {
                   <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">培训项目</th>
                   <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">体系</th>
                   <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">一级部门</th>
+                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">职位信息</th>
                   <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">所属小组</th>
                   <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">邮箱</th>
                   <th className="text-center px-4 py-3 text-xs font-medium text-gray-500">在职</th>
@@ -388,6 +386,7 @@ export default function AdminStudents() {
                     <td className="px-4 py-3 text-sm text-gray-500">{s.project_name || '-'}</td>
                     <td className="px-4 py-3 text-sm text-gray-700">{s.system || '-'}</td>
                     <td className="px-4 py-3 text-sm text-gray-700">{s.level1_dept || '-'}</td>
+                    <td className="px-4 py-3 text-sm text-gray-700">{s.position || '-'}</td>
                     <td className="px-4 py-3 text-sm text-gray-500">{s.group_name || '-'}</td>
                     <td className="px-4 py-3 text-sm text-gray-500">{s.email || '-'}</td>
                     <td className="px-4 py-3 text-center">
@@ -466,6 +465,7 @@ export default function AdminStudents() {
               <div className="rounded-lg bg-indigo-50 px-3 py-2 text-sm text-indigo-700">账号自动使用中文姓名，无需设置密码</div>
               <div><label className="block text-sm text-gray-600 mb-1">体系</label><input type="text" value={createForm.system} onChange={(e) => setCreateForm({...createForm, system: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" /></div>
               <div><label className="block text-sm text-gray-600 mb-1">一级部门</label><input type="text" value={createForm.level1_dept} onChange={(e) => setCreateForm({...createForm, level1_dept: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" /></div>
+              <div><label className="block text-sm text-gray-600 mb-1">职位信息</label><input type="text" value={createForm.position} onChange={(e) => setCreateForm({...createForm, position: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" /></div>
               <div><label className="block text-sm text-gray-600 mb-1">邮箱</label><input type="email" value={createForm.email} onChange={(e) => setCreateForm({...createForm, email: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" /></div>
               <div><label className="block text-sm text-gray-600 mb-1">年度</label><select value={createForm.year_id} onChange={(e) => setCreateForm({...createForm, year_id: e.target.value, project_id: '', group_id: '', group_name: ''})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"><option value="">选择年度</option>{years.map(y => <option key={y.id} value={y.id}>{y.name}</option>)}</select></div>
               <div><label className="block text-sm text-gray-600 mb-1">培训项目</label><select value={createForm.project_id} onChange={(e) => setCreateForm({...createForm, project_id: e.target.value, group_id: '', group_name: ''})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"><option value="">选择项目</option>{createProjects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></div>
@@ -486,6 +486,7 @@ export default function AdminStudents() {
               <div><label className="block text-sm text-gray-600 mb-1">姓名</label><input type="text" value={editForm.real_name} onChange={(e) => setEditForm({...editForm, real_name: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" /></div>
               <div><label className="block text-sm text-gray-600 mb-1">体系</label><input type="text" value={editForm.system || ''} onChange={(e) => setEditForm({...editForm, system: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" /></div>
               <div><label className="block text-sm text-gray-600 mb-1">一级部门</label><input type="text" value={editForm.level1_dept || ''} onChange={(e) => setEditForm({...editForm, level1_dept: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" /></div>
+              <div><label className="block text-sm text-gray-600 mb-1">职位信息</label><input type="text" value={editForm.position || ''} onChange={(e) => setEditForm({...editForm, position: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" /></div>
               <div><label className="block text-sm text-gray-600 mb-1">邮箱</label><input type="email" value={editForm.email || ''} onChange={(e) => setEditForm({...editForm, email: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" /></div>
               <div><label className="block text-sm text-gray-600 mb-1">年度</label><select value={editForm.year_id || ''} onChange={(e) => setEditForm({...editForm, year_id: e.target.value, project_id: '', group_id: '', group_name: ''})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"><option value="">选择年度</option>{years.map(y => <option key={y.id} value={y.id}>{y.name}</option>)}</select></div>
               <div><label className="block text-sm text-gray-600 mb-1">培训项目</label><select value={editForm.project_id || ''} onChange={(e) => setEditForm({...editForm, project_id: e.target.value, group_id: '', group_name: ''})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"><option value="">选择项目</option>{editProjects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></div>
@@ -514,6 +515,7 @@ export default function AdminStudents() {
               <div><span className="text-gray-500">培训项目:</span> <span className="font-medium">{viewModal.project_name || '-'}</span></div>
               <div><span className="text-gray-500">体系:</span> <span className="font-medium">{viewModal.system || '-'}</span></div>
               <div><span className="text-gray-500">一级部门:</span> <span className="font-medium">{viewModal.level1_dept || '-'}</span></div>
+              <div><span className="text-gray-500">职位信息:</span> <span className="font-medium">{viewModal.position || '-'}</span></div>
               <div><span className="text-gray-500">小组:</span> <span className="font-medium">{viewModal.group_name || '-'}</span></div>
               <div><span className="text-gray-500">部门:</span> <span className="font-medium">{viewModal.department || '-'}</span></div>
               <div><span className="text-gray-500">邮箱:</span> <span className="font-medium">{viewModal.email || '-'}</span></div>
@@ -550,10 +552,10 @@ export default function AdminStudents() {
                 {batchData.length > 0 && (
                   <div className="max-h-40 overflow-y-auto border rounded-lg">
                     <table className="w-full text-sm">
-                      <thead><tr className="bg-gray-50"><th className="px-3 py-2 text-left text-xs font-medium text-gray-500">姓名</th><th className="px-3 py-2 text-left text-xs font-medium text-gray-500">体系</th><th className="px-3 py-2 text-left text-xs font-medium text-gray-500">一级部门</th><th className="px-3 py-2 text-left text-xs font-medium text-gray-500">邮箱</th></tr></thead>
+                      <thead><tr className="bg-gray-50"><th className="px-3 py-2 text-left text-xs font-medium text-gray-500">姓名</th><th className="px-3 py-2 text-left text-xs font-medium text-gray-500">体系</th><th className="px-3 py-2 text-left text-xs font-medium text-gray-500">一级部门</th><th className="px-3 py-2 text-left text-xs font-medium text-gray-500">职位信息</th><th className="px-3 py-2 text-left text-xs font-medium text-gray-500">邮箱</th></tr></thead>
                       <tbody className="divide-y divide-gray-50">
                         {batchData.slice(0, 10).map((item, i) => (
-                          <tr key={i}><td className="px-3 py-2 text-gray-700">{item.real_name || item.name}</td><td className="px-3 py-2 text-gray-500">{item.system || '-'}</td><td className="px-3 py-2 text-gray-500">{item.level1_dept || '-'}</td><td className="px-3 py-2 text-gray-500">{item.email || '-'}</td></tr>
+                          <tr key={i}><td className="px-3 py-2 text-gray-700">{item.real_name || item.name}</td><td className="px-3 py-2 text-gray-500">{item.system || '-'}</td><td className="px-3 py-2 text-gray-500">{item.level1_dept || '-'}</td><td className="px-3 py-2 text-gray-500">{item.position || '-'}</td><td className="px-3 py-2 text-gray-500">{item.email || '-'}</td></tr>
                         ))}
                       </tbody>
                     </table>

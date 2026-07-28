@@ -62,6 +62,7 @@ export default function StudentProfile() {
     { label: '地址', value: form.address || '-', icon: MapPin, editable: true, field: 'address' },
     { label: '体系', value: profile.system || '-', icon: Building, editable: false },
     { label: '一级部门', value: profile.level1_dept || '-', icon: Building, editable: false },
+    { label: '职位信息', value: profile.position || '-', icon: Briefcase, editable: false },
     { label: '年度', value: profile.year_name || '-', icon: Calendar, editable: false },
     { label: '培训项目', value: profile.project_name || '-', icon: Briefcase, editable: false },
     { label: '所属小组', value: profile.group_name || '-', icon: Users, editable: false },

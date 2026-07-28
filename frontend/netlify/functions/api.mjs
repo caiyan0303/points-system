@@ -342,11 +342,11 @@ async function adminCoreRoutes(request, pathname, url) {
     const projectId = numberOrNull(url.searchParams.get('project_id'))
     const yearId = numberOrNull(url.searchParams.get('year_id'))
     const values = [`%${keyword}%`, projectId, yearId, pageSize, (page - 1) * pageSize]
-    const where = `u.role='student' AND ($1='' OR u.real_name ILIKE $1 OR u.username ILIKE $1 OR u.email ILIKE $1 OR u.system ILIKE $1 OR u.level1_dept ILIKE $1)
+    const where = `u.role='student' AND ($1='' OR u.real_name ILIKE $1 OR u.username ILIKE $1 OR u.email ILIKE $1 OR u.system ILIKE $1 OR u.level1_dept ILIKE $1 OR u.position ILIKE $1)
       AND ($2::bigint IS NULL OR EXISTS(SELECT 1 FROM project_enrollments pe WHERE pe.student_id=u.id AND pe.project_id=$2))
       AND ($3::bigint IS NULL OR EXISTS(SELECT 1 FROM project_enrollments pe WHERE pe.student_id=u.id AND pe.year_id=$3))`
     const total = Number((await one(`SELECT COUNT(*)::int AS total FROM users u WHERE ${where}`, values.slice(0, 3))).total)
-    const items = await rows(`SELECT u.id,u.username,u.real_name,u.email,u.phone,u.address,u.department,u.system,u.level1_dept,
+    const items = await rows(`SELECT u.id,u.username,u.real_name,u.email,u.phone,u.address,u.department,u.system,u.level1_dept,u.position,
       COALESCE($2,u.project_id) AS project_id,COALESCE($3,u.year_id) AS year_id,u.employment_status,u.account_status,u.created_at,
       p.name AS project_name,y.name AS year_name,g.id AS group_id,g.name AS group_name,
       COALESCE((SELECT SUM(pt.points) FROM points pt WHERE pt.student_id=u.id AND pt.status='有效'),0)::int AS total_earned,
@@ -376,9 +376,9 @@ async function adminCoreRoutes(request, pathname, url) {
       else groupId = (await one("INSERT INTO groups(name,year_id,project_id,status) VALUES($1,$2,$3,'active') RETURNING id",[groupName,yearId,projectId])).id
     }
     const passwordHash = hashPassword(randomBytes(24).toString('hex'))
-    const user = await one(`INSERT INTO users(username,password_hash,role,real_name,email,phone,address,department,system,level1_dept,year_id,project_id,employment_status)
-      VALUES($1,$2,'student',$1,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id,username`,
-      [name,passwordHash,input.email||null,input.phone||null,input.address||null,input.department||null,input.system||null,input.level1_dept||null,yearId,projectId,input.employment_status||'在职'])
+    const user = await one(`INSERT INTO users(username,password_hash,role,real_name,email,phone,address,department,system,level1_dept,position,year_id,project_id,employment_status)
+      VALUES($1,$2,'student',$1,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id,username`,
+      [name,passwordHash,input.email||null,input.phone||null,input.address||null,input.department||null,input.system||null,input.level1_dept||null,input.position||null,yearId,projectId,input.employment_status||'在职'])
     if (yearId && projectId) await rows('INSERT INTO project_enrollments(student_id,year_id,project_id,group_id,label) VALUES($1,$2,$3,$4,$5)', [user.id,yearId,projectId,groupId,'首次参加'])
     if (groupId) await rows('INSERT INTO group_members(group_id,student_id) VALUES($1,$2)',[groupId,user.id])
     return json({ message:`学员 ${name} 创建成功`, ...user }, 201)
@@ -405,8 +405,8 @@ async function adminCoreRoutes(request, pathname, url) {
       if (conflict) return json({detail:'该学员本年度已参加其他项目，不能同时加入两个项目'},400)
     }
     const updated = await one(`UPDATE users SET username=$1,real_name=$1,email=$2,phone=$3,address=$4,department=$5,system=$6,
-      level1_dept=$7,year_id=$8,project_id=$9,employment_status=$10,account_status=$11 WHERE id=$12 RETURNING id,username,real_name`,
-      [name,merged.email||null,merged.phone||null,merged.address||null,merged.department||null,merged.system||null,merged.level1_dept||null,yearId,projectId,merged.employment_status||'在职',merged.account_status||'启用',studentId])
+      level1_dept=$7,position=$8,year_id=$9,project_id=$10,employment_status=$11,account_status=$12 WHERE id=$13 RETURNING id,username,real_name`,
+      [name,merged.email||null,merged.phone||null,merged.address||null,merged.department||null,merged.system||null,merged.level1_dept||null,merged.position||null,yearId,projectId,merged.employment_status||'在职',merged.account_status||'启用',studentId])
     if (yearId && projectId) await rows(`INSERT INTO project_enrollments(student_id,year_id,project_id,group_id,label)
       VALUES($1,$2,$3,$4,'首次参加') ON CONFLICT(student_id,project_id) DO UPDATE SET year_id=EXCLUDED.year_id,group_id=EXCLUDED.group_id`,
       [studentId,yearId,projectId,groupChange ? groupId : null])
@@ -505,7 +505,7 @@ async function adminExtendedRoutes(request, pathname, url) {
       ['年度',`SELECT id,name AS 年度,status AS 状态,created_at AS 创建时间 FROM academic_years ORDER BY id`],
       ['项目',`SELECT p.id,y.name AS 年度,p.name AS 项目名称,p.start_date AS 开始时间,p.end_date AS 结束时间,p.status AS 状态,p.description AS 描述 FROM training_projects p LEFT JOIN academic_years y ON y.id=p.year_id ORDER BY p.id`],
       ['阶段',`SELECT ph.id,y.name AS 年度,p.name AS 项目名称,ph.name AS 阶段名称,ph.start_date AS 开始时间,ph.end_date AS 结束时间,ph.status AS 状态 FROM phases ph LEFT JOIN academic_years y ON y.id=ph.year_id LEFT JOIN training_projects p ON p.id=ph.project_id ORDER BY ph.id`],
-      ['学员',`SELECT u.id,u.real_name AS 姓名,u.username AS 登录账号,u.system AS 体系,u.level1_dept AS 一级部门,u.email AS 邮箱,u.phone AS 电话,u.account_status AS 账号状态,y.name AS 年度,p.name AS 项目名称,g.name AS 小组 FROM users u LEFT JOIN project_enrollments pe ON pe.student_id=u.id LEFT JOIN academic_years y ON y.id=pe.year_id LEFT JOIN training_projects p ON p.id=pe.project_id LEFT JOIN groups g ON g.id=pe.group_id WHERE u.role='student' ORDER BY u.id`],
+      ['学员',`SELECT u.id,u.real_name AS 姓名,u.username AS 登录账号,u.system AS 体系,u.level1_dept AS 一级部门,u.position AS 职位信息,u.email AS 邮箱,u.phone AS 电话,u.account_status AS 账号状态,y.name AS 年度,p.name AS 项目名称,g.name AS 小组 FROM users u LEFT JOIN project_enrollments pe ON pe.student_id=u.id LEFT JOIN academic_years y ON y.id=pe.year_id LEFT JOIN training_projects p ON p.id=pe.project_id LEFT JOIN groups g ON g.id=pe.group_id WHERE u.role='student' ORDER BY u.id`],
       ['小组',`SELECT g.id,y.name AS 年度,p.name AS 项目名称,g.name AS 小组名称,COUNT(gm.student_id)::int AS 成员数 FROM groups g LEFT JOIN academic_years y ON y.id=g.year_id LEFT JOIN training_projects p ON p.id=g.project_id LEFT JOIN group_members gm ON gm.group_id=g.id GROUP BY g.id,y.name,p.name ORDER BY g.id`],
       ['个人积分流水',`SELECT pt.id,pt.record_number AS 流水号,u.real_name AS 学员,y.name AS 年度,p.name AS 项目名称,ph.name AS 阶段,g.name AS 小组,pt.category AS 积分分类,pt.item_name AS 积分事项,pt.points AS 积分,pt.data_source AS 数据来源,pt.source_note AS 来源说明,pt.description AS 备注,pt.status AS 状态,pt.obtained_date AS 获得时间,pt.created_at AS 创建时间 FROM points pt JOIN users u ON u.id=pt.student_id LEFT JOIN academic_years y ON y.id=pt.year_id LEFT JOIN training_projects p ON p.id=pt.project_id LEFT JOIN phases ph ON ph.id=pt.phase_id LEFT JOIN groups g ON g.id=pt.group_id ORDER BY pt.id`],
       ['团队积分流水',`SELECT tp.id,tp.record_number AS 流水号,g.name AS 小组,y.name AS 年度,p.name AS 项目名称,ph.name AS 阶段,tp.category AS 积分分类,tp.item_name AS 积分事项,tp.points AS 积分,tp.data_source AS 数据来源,tp.source_note AS 来源说明,tp.remark AS 备注,tp.status AS 状态,tp.obtained_date AS 获得时间,tp.created_at AS 创建时间 FROM team_points tp JOIN groups g ON g.id=tp.group_id LEFT JOIN academic_years y ON y.id=tp.year_id LEFT JOIN training_projects p ON p.id=tp.project_id LEFT JOIN phases ph ON ph.id=tp.phase_id ORDER BY tp.id`],
@@ -522,7 +522,7 @@ async function adminExtendedRoutes(request, pathname, url) {
   const studentIdMatch = pathname.match(/^\/api\/admin\/students\/(\d+)$/)
   if (studentIdMatch && request.method === 'GET') {
     const id=Number(studentIdMatch[1])
-    const student=await one(`SELECT u.id,u.username,u.real_name,u.email,u.phone,u.address,u.department,u.system,u.level1_dept,
+    const student=await one(`SELECT u.id,u.username,u.real_name,u.email,u.phone,u.address,u.department,u.system,u.level1_dept,u.position,
       u.employment_status,u.account_status,u.created_at,pe.year_id,pe.project_id,pe.group_id,y.name AS year_name,p.name AS project_name,g.name AS group_name
       FROM users u LEFT JOIN project_enrollments pe ON pe.student_id=u.id LEFT JOIN academic_years y ON y.id=pe.year_id
       LEFT JOIN training_projects p ON p.id=pe.project_id LEFT JOIN groups g ON g.id=pe.group_id WHERE u.id=$1 AND u.role='student' ORDER BY pe.id DESC LIMIT 1`,[id])
@@ -558,11 +558,14 @@ async function adminExtendedRoutes(request, pathname, url) {
         if (!projectId&&projectName&&yearId) projectId=(await one('SELECT id FROM training_projects WHERE year_id=$1 AND name=$2',[yearId,projectName]))?.id
         if (!projectId&&projectName&&yearId) projectId=(await one("INSERT INTO training_projects(name,year_id,status) VALUES($1,$2,'active') RETURNING id",[projectName,yearId])).id
         const existing=await one("SELECT id FROM users WHERE username=$1 AND role='student'",[name])
+        if (existing) await rows(`UPDATE users SET email=COALESCE(NULLIF($1,''),email),phone=COALESCE(NULLIF($2,''),phone),address=COALESCE(NULLIF($3,''),address),
+          system=COALESCE(NULLIF($4,''),system),level1_dept=COALESCE(NULLIF($5,''),level1_dept),position=COALESCE(NULLIF($6,''),position),employment_status=COALESCE(NULLIF($7,''),employment_status) WHERE id=$8`,
+          [item.email||item['邮箱']||'',item.phone||item['电话']||'',item.address||item['地址']||'',item.system||item['体系']||'',item.level1_dept||item['一级部门']||'',item.position||item['职位信息']||item['职位']||'',item.employment_status||item['在职状态']||'',existing.id])
         if (existing&&yearId&&await one('SELECT id FROM project_enrollments WHERE student_id=$1 AND year_id=$2',[existing.id,yearId])) { result.skipped++; continue }
         if (groupName&&projectId) groupId=(await one('SELECT id FROM groups WHERE project_id=$1 AND name=$2',[projectId,groupName]))?.id||
           (await one("INSERT INTO groups(name,year_id,project_id,status) VALUES($1,$2,$3,'active') RETURNING id",[groupName,yearId,projectId])).id
-        const studentId=existing?.id||(await one(`INSERT INTO users(username,password_hash,role,real_name,email,phone,address,system,level1_dept,year_id,project_id)
-          VALUES($1,$2,'student',$1,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,[name,hashPassword(randomBytes(24).toString('hex')),item.email||item['邮箱']||null,item.phone||item['电话']||null,item.address||item['地址']||null,item.system||item['体系']||null,item.level1_dept||item['一级部门']||null,yearId,projectId])).id
+        const studentId=existing?.id||(await one(`INSERT INTO users(username,password_hash,role,real_name,email,phone,address,system,level1_dept,position,year_id,project_id,employment_status)
+          VALUES($1,$2,'student',$1,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id`,[name,hashPassword(randomBytes(24).toString('hex')),item.email||item['邮箱']||null,item.phone||item['电话']||null,item.address||item['地址']||null,item.system||item['体系']||null,item.level1_dept||item['一级部门']||null,item.position||item['职位信息']||item['职位']||null,yearId,projectId,item.employment_status||item['在职状态']||'在职'])).id
         if (yearId&&projectId) await rows(`INSERT INTO project_enrollments(student_id,year_id,project_id,group_id,label) VALUES($1,$2,$3,$4,'首次参加')
           ON CONFLICT(student_id,project_id) DO UPDATE SET group_id=EXCLUDED.group_id`,[studentId,yearId,projectId,groupId])
         if (groupId) await rows('INSERT INTO group_members(group_id,student_id) VALUES($1,$2) ON CONFLICT DO NOTHING',[groupId,studentId])
@@ -834,7 +837,7 @@ async function studentRoutes(request, pathname, url) {
     return json({history})
   }
   if(pathname==='/api/student/profile'&&request.method==='GET')return json({...student,...enrollment})
-  if(pathname==='/api/student/profile'&&request.method==='PUT'){const i=await body(request);return json(await one('UPDATE users SET email=$1,phone=$2,address=$3 WHERE id=$4 RETURNING id,username,real_name,email,phone,address,system,level1_dept',[i.email||null,i.phone||null,i.address||null,student.id]))}
+  if(pathname==='/api/student/profile'&&request.method==='PUT'){const i=await body(request);return json(await one('UPDATE users SET email=$1,phone=$2,address=$3 WHERE id=$4 RETURNING id,username,real_name,email,phone,address,system,level1_dept,position',[i.email||null,i.phone||null,i.address||null,student.id]))}
   if(pathname==='/api/student/rule-text'&&request.method==='GET')return json(await rows('SELECT * FROM rule_texts ORDER BY id DESC'))
   if(pathname==='/api/student/team'&&request.method==='GET'){
     if(!enrollment?.group_id)return json({group:null,members:[]})
