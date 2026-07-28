@@ -20,6 +20,7 @@ const STATUS_LABEL = {
   '暂时下架': '暂时下架',
   '补货中': '补货中',
 }
+const isProductListed = product => ['可兑换', '即将售罄'].includes(product.product_status)
 
 export default function AdminProducts() {
   const [products, setProducts] = useState([])
@@ -98,7 +99,7 @@ export default function AdminProducts() {
 
   const toggleStatus = async (p) => {
     try {
-      const newStatus = p.product_status === '可兑换' ? '暂时下架' : '可兑换'
+      const newStatus = isProductListed(p) ? '暂时下架' : '可兑换'
       await api.put(`/api/admin/products/${p.id}`, { product_status: newStatus })
       showToast(`商品已${newStatus === '可兑换' ? '上架' : '下架'}`)
       fetchProducts()
@@ -168,6 +169,11 @@ export default function AdminProducts() {
                   </span>
                 </div>
                 <h3 className="font-semibold text-gray-900 text-sm mb-3">{p.name}</h3>
+                {!isProductListed(p) && (
+                  <div className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                    当前商品未上架，学员端不可见
+                  </div>
+                )}
                 <div className="space-y-1 text-sm">
                 <div className="flex justify-between">
                   <span className="text-gray-500">所需积分</span>
@@ -195,10 +201,11 @@ export default function AdminProducts() {
                 <button onClick={() => openEdit(p)} className="px-3 py-1.5 text-xs bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100">
                   <Edit className="w-3 h-3" />
                 </button>
-                <button onClick={() => toggleStatus(p)} className={`px-3 py-1.5 text-xs rounded-lg ${
-                  p.product_status === '可兑换' ? 'bg-red-50 text-red-500 hover:bg-red-100' : 'bg-green-50 text-green-600 hover:bg-green-100'
+                <button onClick={() => toggleStatus(p)} title={isProductListed(p) ? '下架商品' : '上架商品'} className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg ${
+                  isProductListed(p) ? 'bg-red-50 text-red-500 hover:bg-red-100' : 'bg-green-50 text-green-600 hover:bg-green-100'
                 }`}>
-                  <Power className="w-3 h-3" />
+                  <Power className="w-3.5 h-3.5" />
+                  {isProductListed(p) ? '下架商品' : '上架商品'}
                 </button>
               </div>
               </div>

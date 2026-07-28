@@ -445,6 +445,10 @@ async function adminCoreRoutes(request, pathname, url) {
     const input = await body(request); const id = Number(productMatch[1])
     const old = await one('SELECT * FROM products WHERE id=$1',[id]); if (!old) return json({detail:'商品不存在'},404)
     const merged = {...old,...input}
+    if(Object.prototype.hasOwnProperty.call(input,'total_stock')&&!Object.prototype.hasOwnProperty.call(input,'available_stock')){
+      merged.available_stock=Math.max(0,Number(old.available_stock)+Number(input.total_stock)-Number(old.total_stock))
+    }
+    if(input.product_status==='可兑换'&&Number(merged.available_stock)<=0)return json({detail:'库存不足，请先补充库存后再上架'},400)
     return json(await one(`UPDATE products SET name=$1,description=$2,image_url=$3,points_required=$4,total_stock=$5,available_stock=$6,
       on_site_stock=$7,limit_per_person=$8,is_limited=$9,on_sale_time=$10,off_sale_time=$11,product_status=$12 WHERE id=$13 RETURNING *`,
       [merged.name,merged.description,merged.image_url,merged.points_required,merged.total_stock,merged.available_stock,merged.on_site_stock,merged.limit_per_person,merged.is_limited,merged.on_sale_time,merged.off_sale_time,merged.product_status,id]))
