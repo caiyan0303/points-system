@@ -7,7 +7,6 @@ import LoginPage from './pages/LoginPage'
 
 // Student Pages
 import StudentDashboard from './pages/student/Dashboard'
-import StudentPhaseOverview from './pages/student/PhaseOverview'
 import StudentTeam from './pages/student/Team'
 import StudentPoints from './pages/student/Points'
 import StudentShop from './pages/student/Shop'
@@ -54,7 +53,7 @@ function AppRoutes() {
       } />
 
       <Route path="/student/dashboard" element={<ProtectedRoute role="student"><StudentDashboard /></ProtectedRoute>} />
-      <Route path="/student/phases" element={<ProtectedRoute role="student"><StudentPhaseOverview /></ProtectedRoute>} />
+      <Route path="/student/phases" element={<ProtectedRoute role="student"><Navigate to="/student/points" replace /></ProtectedRoute>} />
       <Route path="/student/team" element={<ProtectedRoute role="student"><StudentTeam /></ProtectedRoute>} />
       <Route path="/student/points" element={<ProtectedRoute role="student"><StudentPoints /></ProtectedRoute>} />
       <Route path="/student/shop" element={<ProtectedRoute role="student"><StudentShop /></ProtectedRoute>} />

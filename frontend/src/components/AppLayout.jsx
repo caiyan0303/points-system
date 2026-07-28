@@ -56,23 +56,17 @@ const studentGroups = [
     ]
   },
   {
-    key: 'training', label: '我的培训', icon: Layers,
-    items: [
-      { path: '/student/phases', icon: Layers, label: '阶段积分概览' },
-      { path: '/student/team', icon: UsersRound, label: '我的团队' },
-    ]
-  },
-  {
     key: 'points', label: '我的积分', icon: TrendingUp,
     items: [
-      { path: '/student/points', icon: TrendingUp, label: '积分明细' },
-      { path: '/student/rule-text', icon: ScrollText, label: '积分规则' },
+      { path: '/student/points', icon: TrendingUp, label: '个人积分' },
+      { path: '/student/team', icon: UsersRound, label: '小组积分' },
     ]
   },
   {
     key: 'mall', label: '积分商城', icon: ShoppingBag,
     items: [
       { path: '/student/shop', icon: ShoppingBag, label: '积分商城' },
+      { path: '/student/rule-text', icon: ScrollText, label: '积分规则' },
       { path: '/student/redemptions', icon: History, label: '兑换记录' },
     ]
   },

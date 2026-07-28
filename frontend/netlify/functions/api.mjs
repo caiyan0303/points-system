@@ -778,7 +778,30 @@ async function adminExtendedRoutes(request, pathname, url) {
   const productDelete=pathname.match(/^\/api\/admin\/products\/(\d+)$/);if(productDelete&&request.method==='DELETE'){const id=Number(productDelete[1]);if(await one('SELECT id FROM redemptions WHERE product_id=$1 LIMIT 1',[id]))return json({detail:'商品已有兑换记录，不能删除'},400);await rows('DELETE FROM products WHERE id=$1',[id]);return json({message:'商品已删除'})}
 
   if(pathname==='/api/admin/redemptions'&&request.method==='GET'){const {page,pageSize,offset}=pageInfo(url);const status=url.searchParams.get('status')||'',keyword=url.searchParams.get('keyword')||'';const args=[status,`%${keyword}%`];const where="($1='' OR r.status=$1) AND ($2='%%' OR u.real_name ILIKE $2 OR p.name ILIKE $2 OR r.tracking_number ILIKE $2)";const total=Number((await one(`SELECT COUNT(*)::int AS total FROM redemptions r JOIN users u ON u.id=r.student_id JOIN products p ON p.id=r.product_id WHERE ${where}`,args)).total);const items=await rows(`SELECT r.*,u.real_name AS student_name,u.phone,p.name AS product_name,p.image_url FROM redemptions r JOIN users u ON u.id=r.student_id JOIN products p ON p.id=r.product_id WHERE ${where} ORDER BY r.id DESC LIMIT $3 OFFSET $4`,[...args,pageSize,offset]);return json({items,total,page,page_size:pageSize,total_pages:Math.max(1,Math.ceil(total/pageSize))})}
-  const redemptionStatus=pathname.match(/^\/api\/admin\/redemptions\/(\d+)\/status$/);if(redemptionStatus&&request.method==='PUT'){const id=Number(redemptionStatus[1]),i=await body(request),r=await one('SELECT * FROM redemptions WHERE id=$1',[id]);if(!r)return json({detail:'兑换记录不存在'},404);const next=i.status;if(next==='已拒绝'||next==='已取消'){if(!['已拒绝','已取消'].includes(r.status)){await rows('UPDATE products SET available_stock=available_stock+1,locked_stock=GREATEST(locked_stock-1,0) WHERE id=$1',[r.product_id])}}else if(['已拒绝','已取消'].includes(r.status)){const stock=await one('UPDATE products SET available_stock=available_stock-1,locked_stock=locked_stock+1 WHERE id=$1 AND available_stock>0 RETURNING id',[r.product_id]);if(!stock)return json({detail:'商品库存不足，无法恢复此兑换'},400)}const updated=await one(`UPDATE redemptions SET status=$1,reject_reason=$2,express_company=$3,tracking_number=$4,approved_at=CASE WHEN $1='已通过' THEN NOW() ELSE approved_at END,shipped_at=CASE WHEN $1='已发货' THEN NOW() ELSE shipped_at END,received_at=CASE WHEN $1 IN ('已领取','已完成') THEN NOW() ELSE received_at END,updated_at=NOW() WHERE id=$5 RETURNING *`,[next,next==='已拒绝'?(i.reject_reason||null):null,i.express_company||null,i.tracking_number||null,id]);return json(updated)}
+  const redemptionStatus=pathname.match(/^\/api\/admin\/redemptions\/(\d+)\/status$/)
+  if(redemptionStatus&&request.method==='PUT'){
+    const id=Number(redemptionStatus[1]),i=await body(request)
+    const redemption=await one('SELECT * FROM redemptions WHERE id=$1',[id])
+    if(!redemption)return json({detail:'兑换记录不存在'},404)
+    const next=i.status
+    const allowed=['待审核','已通过','已拒绝','已发货','已领取','已取消','已完成']
+    if(!allowed.includes(next))return json({detail:'无效的审核状态'},400)
+    const closed=['已拒绝','已取消']
+    if(closed.includes(next)&&!closed.includes(redemption.status)){
+      await rows('UPDATE products SET available_stock=COALESCE(available_stock,0)+1,locked_stock=GREATEST(COALESCE(locked_stock,0)-1,0) WHERE id=$1',[redemption.product_id])
+    }else if(!closed.includes(next)&&closed.includes(redemption.status)){
+      const stock=await one('UPDATE products SET available_stock=COALESCE(available_stock,0)-1,locked_stock=COALESCE(locked_stock,0)+1 WHERE id=$1 AND COALESCE(available_stock,0)>0 RETURNING id',[redemption.product_id])
+      if(!stock)return json({detail:'商品库存不足，无法恢复此兑换'},400)
+    }
+    const updates=['status=$1','reject_reason=$2','express_company=$3','tracking_number=$4','updated_at=NOW()']
+    if(next==='已通过')updates.push('approved_at=NOW()')
+    if(next==='已发货')updates.push('shipped_at=NOW()')
+    if(next==='已领取'||next==='已完成')updates.push('received_at=NOW()')
+    const expressCompany=Object.prototype.hasOwnProperty.call(i,'express_company')?(i.express_company||null):redemption.express_company
+    const trackingNumber=Object.prototype.hasOwnProperty.call(i,'tracking_number')?(i.tracking_number||null):redemption.tracking_number
+    const updated=await one(`UPDATE redemptions SET ${updates.join(',')} WHERE id=$5 RETURNING *`,[next,next==='已拒绝'?(i.reject_reason||null):null,expressCompany,trackingNumber,id])
+    return json(updated)
+  }
   const redemptionAction=pathname.match(/^\/api\/admin\/redemptions\/(\d+)\/(approve|reject|ship|receive)$/)
   if(redemptionAction&&request.method==='PUT'){const input=await body(request),statusMap={approve:'已通过',reject:'已拒绝',ship:'已发货',receive:'已领取'};const fake=new Request(request.url,{method:'PUT',headers:request.headers,body:JSON.stringify({...input,status:statusMap[redemptionAction[2]]})});return adminExtendedRoutes(fake,`/api/admin/redemptions/${redemptionAction[1]}/status`,url)}
 
@@ -856,7 +879,15 @@ async function studentRoutes(request, pathname, url) {
     const categoryDetails=await rows("SELECT category,COALESCE(SUM(points),0)::int AS points FROM points WHERE phase_id=$1 AND student_id=$2 AND status IN ('有效','active') GROUP BY category ORDER BY category",[phaseId,student.id])
     return json({...phase,category_details:categoryDetails,personal_rankings:personal,rankings:personal,group_rankings:groups,my_ranking:personal.find(p=>String(p.student_id)===String(student.id))||null,my_group_ranking:groups.find(g=>String(g.group_id)===String(enrollment?.group_id))||null})
   }
-  if(pathname==='/api/student/points/records'&&request.method==='GET'){const {page,pageSize,offset}=pageInfo(url);const yearId=numberOrNull(url.searchParams.get('year_id')),projectId=numberOrNull(url.searchParams.get('project_id')),phaseId=numberOrNull(url.searchParams.get('phase_id'));const args=[student.id,yearId,projectId,phaseId];const where="pt.student_id=$1 AND ($2::bigint IS NULL OR pt.year_id=$2) AND ($3::bigint IS NULL OR pt.project_id=$3) AND ($4::bigint IS NULL OR pt.phase_id=$4)";const total=Number((await one(`SELECT COUNT(*)::int AS total FROM points pt WHERE ${where}`,args)).total);const items=await rows(`SELECT pt.*,y.name AS year_name,p.name AS project_name,ph.name AS phase_name FROM points pt LEFT JOIN academic_years y ON y.id=pt.year_id LEFT JOIN training_projects p ON p.id=pt.project_id LEFT JOIN phases ph ON ph.id=pt.phase_id WHERE ${where} ORDER BY pt.id DESC LIMIT $5 OFFSET $6`,[...args,pageSize,offset]);return json({items,total,page,page_size:pageSize,total_pages:Math.max(1,Math.ceil(total/pageSize))})}
+  if(pathname==='/api/student/points/records'&&request.method==='GET'){
+    const {page,pageSize,offset}=pageInfo(url)
+    const yearId=numberOrNull(url.searchParams.get('year_id')),projectId=numberOrNull(url.searchParams.get('project_id')),phaseId=numberOrNull(url.searchParams.get('phase_id')),category=url.searchParams.get('category')||''
+    const args=[student.id,yearId,projectId,phaseId,category]
+    const where="pt.student_id=$1 AND ($2::bigint IS NULL OR pt.year_id=$2) AND ($3::bigint IS NULL OR pt.project_id=$3) AND ($4::bigint IS NULL OR pt.phase_id=$4) AND ($5='' OR pt.category=$5)"
+    const total=Number((await one(`SELECT COUNT(*)::int AS total FROM points pt WHERE ${where}`,args)).total)
+    const items=await rows(`SELECT pt.*,y.name AS year_name,p.name AS project_name,ph.name AS phase_name FROM points pt LEFT JOIN academic_years y ON y.id=pt.year_id LEFT JOIN training_projects p ON p.id=pt.project_id LEFT JOIN phases ph ON ph.id=pt.phase_id WHERE ${where} ORDER BY pt.id DESC LIMIT $6 OFFSET $7`,[...args,pageSize,offset])
+    return json({items,total,page,page_size:pageSize,total_pages:Math.max(1,Math.ceil(total/pageSize))})
+  }
   if(pathname==='/api/student/products'&&request.method==='GET')return json(await rows("SELECT * FROM products WHERE product_status IN ('可兑换','即将售罄') AND available_stock>0 ORDER BY id DESC"))
   if(pathname==='/api/student/redemptions'&&request.method==='POST'){const i=await body(request),product=await one("SELECT * FROM products WHERE id=$1 AND product_status IN ('可兑换','即将售罄')",[Number(i.product_id)]);if(!product)return json({detail:'商品未上架或不存在'},404);const balance=await balanceFor(student.id);if(balance.available<product.points_required)return json({detail:`积分不足：当前 ${balance.available} 分，需要 ${product.points_required} 分`},400);if(product.is_limited&&product.limit_per_person){const count=Number((await one("SELECT COUNT(*)::int AS count FROM redemptions WHERE student_id=$1 AND product_id=$2 AND status NOT IN ('已拒绝','已取消')",[student.id,product.id])).count);if(count>=product.limit_per_person)return json({detail:'已达到该商品每人兑换上限'},400)}const stock=await one('UPDATE products SET available_stock=available_stock-1,locked_stock=locked_stock+1 WHERE id=$1 AND available_stock>0 RETURNING id',[product.id]);if(!stock)return json({detail:'商品库存不足'},400);return json(await one("INSERT INTO redemptions(student_id,product_id,points_spent,status,locked_at,address_snapshot) VALUES($1,$2,$3,'待审核',NOW(),$4) RETURNING *",[student.id,product.id,product.points_required,student.address||null]),201)}
   if(pathname==='/api/student/redemptions'&&request.method==='GET'){const {page,pageSize,offset}=pageInfo(url);const status=url.searchParams.get('status')||'';const total=Number((await one("SELECT COUNT(*)::int AS total FROM redemptions WHERE student_id=$1 AND ($2='' OR status=$2)",[student.id,status])).total);const items=await rows(`SELECT r.*,p.name AS product_name,p.image_url FROM redemptions r JOIN products p ON p.id=r.product_id WHERE r.student_id=$1 AND ($2='' OR r.status=$2) ORDER BY r.id DESC LIMIT $3 OFFSET $4`,[student.id,status,pageSize,offset]);return json({items,total,page,page_size:pageSize,total_pages:Math.max(1,Math.ceil(total/pageSize))})}
@@ -878,7 +909,15 @@ async function studentRoutes(request, pathname, url) {
   if(pathname==='/api/student/profile'&&request.method==='PUT'){const i=await body(request);return json(await one('UPDATE users SET email=$1,phone=$2,address=$3 WHERE id=$4 RETURNING id,username,real_name,email,phone,address,system,level1_dept,position',[i.email||null,i.phone||null,i.address||null,student.id]))}
   if(pathname==='/api/student/rule-text'&&request.method==='GET')return json(await rows('SELECT * FROM rule_texts ORDER BY id DESC'))
   if(pathname==='/api/student/team'&&request.method==='GET'){
-    if(!enrollment?.group_id)return json({group:null,members:[]})
+    if(!enrollment?.project_id)return json({group:null,members:[],all_groups:[],team_point_records:[]})
+    const groupRanks=await rows(`SELECT g.id,g.name,
+      (SELECT COUNT(DISTINCT member_id)::int FROM (SELECT pe.student_id AS member_id FROM project_enrollments pe WHERE pe.project_id=$1 AND pe.group_id=g.id UNION SELECT gm.student_id AS member_id FROM group_members gm WHERE gm.group_id=g.id) member_rows) AS member_count,
+      COALESCE((SELECT SUM(pt.points) FROM points pt WHERE pt.project_id=$1 AND pt.status IN ('有效','active') AND pt.student_id IN (SELECT pe.student_id FROM project_enrollments pe WHERE pe.project_id=$1 AND pe.group_id=g.id UNION SELECT gm.student_id FROM group_members gm WHERE gm.group_id=g.id)),0)::int AS personal_points,
+      COALESCE((SELECT SUM(tp.points) FROM team_points tp WHERE tp.group_id=g.id AND tp.project_id=$1 AND tp.status IN ('有效','active')),0)::int AS team_points
+      FROM groups g WHERE g.project_id=$1`,[enrollment.project_id])
+    groupRanks.forEach(item=>item.final_score=Number(item.personal_points)+Number(item.team_points))
+    groupRanks.sort((a,b)=>b.final_score-a.final_score).forEach((item,index)=>{item.rank=index+1;item.is_my_group=String(item.id)===String(enrollment.group_id)})
+    if(!enrollment.group_id)return json({group:null,members:[],all_groups:groupRanks,team_point_records:[]})
     const group=await one('SELECT * FROM groups WHERE id=$1',[enrollment.group_id])
     const members=await rows(`SELECT u.id AS student_id,u.real_name AS student_name,u.level1_dept AS department,
       COALESCE(SUM(pt.points) FILTER(WHERE pt.status IN ('有效','active')),0)::int AS period_points
@@ -887,9 +926,8 @@ async function studentRoutes(request, pathname, url) {
     members.forEach((member,index)=>member.rank=index+1)
     const personalTotal=members.reduce((sum,member)=>sum+Number(member.period_points),0)
     const teamPoints=Number((await one("SELECT COALESCE(SUM(points),0)::int AS total FROM team_points WHERE group_id=$1 AND project_id=$2 AND status IN ('有效','active')",[group.id,enrollment.project_id]))?.total||0)
-    const groupRanks=await rows(`SELECT g.id,COALESCE((SELECT SUM(pt.points) FROM points pt JOIN group_members gm ON gm.student_id=pt.student_id WHERE gm.group_id=g.id AND pt.project_id=$1 AND pt.status IN ('有效','active')),0)::int AS personal_points,COALESCE((SELECT SUM(tp.points) FROM team_points tp WHERE tp.group_id=g.id AND tp.project_id=$1 AND tp.status IN ('有效','active')),0)::int AS team_points FROM groups g WHERE g.project_id=$1`,[enrollment.project_id]);groupRanks.forEach(item=>item.final_score=Number(item.personal_points)+Number(item.team_points));groupRanks.sort((a,b)=>b.final_score-a.final_score)
     const recentTeamPoints=await rows(`SELECT tp.id,tp.category,tp.item_name,tp.points,tp.obtained_date,ph.name AS phase_name FROM team_points tp LEFT JOIN phases ph ON ph.id=tp.phase_id WHERE tp.group_id=$1 AND tp.project_id=$2 AND tp.status IN ('有效','active') ORDER BY tp.obtained_date DESC,tp.id DESC LIMIT 20`,[group.id,enrollment.project_id])
-    return json({group:{...group,member_count:members.length,personal_points:personalTotal,team_points:teamPoints,total_points:personalTotal+teamPoints,final_score:personalTotal+teamPoints,avg_points:members.length?Math.round((personalTotal+teamPoints)*100/members.length)/100:0,rank:groupRanks.findIndex(item=>String(item.id)===String(group.id))+1},members,team_point_records:recentTeamPoints})
+    return json({group:{...group,member_count:members.length,personal_points:personalTotal,team_points:teamPoints,total_points:personalTotal+teamPoints,final_score:personalTotal+teamPoints,avg_points:members.length?Math.round((personalTotal+teamPoints)*100/members.length)/100:0,rank:groupRanks.findIndex(item=>String(item.id)===String(group.id))+1},members,all_groups:groupRanks,team_point_records:recentTeamPoints})
   }
   const teamPhase=pathname.match(/^\/api\/student\/team\/phases\/(\d+)$/)
   if(teamPhase&&request.method==='GET'){

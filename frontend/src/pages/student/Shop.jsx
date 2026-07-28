@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react'
+import { Link } from 'react-router-dom'
 import api from '../../api'
 import AppLayout from '../../components/AppLayout'
 import Toast from '../../components/Toast'
-import { X, Package, Clock } from 'lucide-react'
+import { X, Package, Clock, ScrollText } from 'lucide-react'
 
 export default function StudentShop() {
   const [products, setProducts] = useState([])
@@ -60,11 +61,16 @@ export default function StudentShop() {
   return (
     <AppLayout>
       <Toast message={toast?.msg} type={toast?.type} onClose={() => setToast(null)} />
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">积分商城</h1>
-        {stats && (
-          <p className="text-gray-500 mt-1">可用积分: <span className="font-semibold text-indigo-600">{stats.available_points || 0}</span></p>
-        )}
+      <div className="mb-6 flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">积分商城</h1>
+          {stats && (
+            <p className="text-gray-500 mt-1">可用积分: <span className="font-semibold text-indigo-600">{stats.available_points || 0}</span></p>
+          )}
+        </div>
+        <Link to="/student/rule-text" className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-indigo-200 bg-indigo-50 text-sm font-medium text-indigo-700 hover:bg-indigo-100">
+          <ScrollText className="w-4 h-4" /> 查看积分规则
+        </Link>
       </div>
 
       {loading ? (
