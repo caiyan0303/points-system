@@ -138,14 +138,15 @@ export default function StudentPhaseOverview() {
                       <h4 className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-2"><Trophy className="w-4 h-4 text-orange-500" />小组积分排名</h4>
                       <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
                         <table className="w-full text-sm">
-                          <thead><tr className="border-b bg-gray-50"><th className="px-3 py-2 text-left text-xs text-gray-500">排名</th><th className="px-3 py-2 text-left text-xs text-gray-500">小组</th><th className="px-3 py-2 text-right text-xs text-gray-500">总积分</th><th className="px-3 py-2 text-right text-xs text-gray-500">人均</th></tr></thead>
+                          <thead><tr className="border-b bg-gray-50"><th className="px-3 py-2 text-left text-xs text-gray-500">排名</th><th className="px-3 py-2 text-left text-xs text-gray-500">小组</th><th className="px-3 py-2 text-right text-xs text-gray-500">成员个人积分</th><th className="px-3 py-2 text-right text-xs text-gray-500">团队积分</th><th className="px-3 py-2 text-right text-xs text-gray-500">最终得分</th></tr></thead>
                           <tbody>
                             {(phaseDetails[p.phase_id].group_rankings || []).map((r) => (
                               <tr key={r.group_id} className={`border-b border-gray-50 last:border-0 ${r.is_my_group ? 'bg-orange-50' : ''}`}>
                                 <td className="px-3 py-2 font-medium">第 {r.rank} 名</td>
                                 <td className="px-3 py-2">{r.group_name}{r.is_my_group ? <span className="ml-2 text-xs text-orange-600">我的小组</span> : null}<p className="text-xs text-gray-400">{r.member_count} 人</p></td>
-                                <td className="px-3 py-2 text-right font-semibold text-indigo-600">{r.total_points}</td>
-                                <td className="px-3 py-2 text-right text-gray-600">{r.avg_points}</td>
+                                <td className="px-3 py-2 text-right text-indigo-600">{r.personal_points || 0}</td>
+                                <td className="px-3 py-2 text-right text-orange-600">{r.team_points || 0}</td>
+                                <td className="px-3 py-2 text-right font-semibold text-green-600">{r.final_score || r.total_points || 0}</td>
                               </tr>
                             ))}
                           </tbody>

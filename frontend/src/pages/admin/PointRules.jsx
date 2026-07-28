@@ -4,11 +4,8 @@ import AppLayout from '../../components/AppLayout'
 import Toast from '../../components/Toast'
 import { Plus, X, Edit, Upload, FileText, Trash2 } from 'lucide-react'
 
-const CATEGORIES = [
-  '线上学习', '线上考试', '学习输出', '问卷反馈', '线下出勤',
-  '课堂互动', '课堂任务', '实践任务', '成果转化', '团队共创', '团队贡献',
-  '小组长职责', '项目贡献', '特殊调整'
-]
+const PERSONAL_CATEGORIES = ['线上学习', '学习输出', '问卷及测评反馈', '线下出勤', '课堂互动', '结营任务', '小组长职责', '特殊调整']
+const TEAM_CATEGORIES = ['线上案例沟通', '线上案例输出', '阶段案例评优', '沙盘共创', '特殊调整']
 
 export default function AdminPointRules() {
   const [rules, setRules] = useState([])
@@ -20,9 +17,9 @@ export default function AdminPointRules() {
   const [editModal, setEditModal] = useState(null)
 
   const defaultForm = {
-    category: '线上学习', rule_name: '', default_points: '', max_points: '',
+    account_type: '个人', category: '线上学习', rule_name: '', default_points: '', max_points: '',
     applicable_projects: [], applicable_phases: [], allow_repeat: false,
-    count_in_period: true, count_in_available: true, need_approval: false, description: ''
+    count_in_period: true, count_in_available: true, need_approval: false, description: '', scoring_standard: ''
   }
   const [form, setForm] = useState(defaultForm)
 
@@ -53,6 +50,7 @@ export default function AdminPointRules() {
   const openEdit = (rule) => {
     setEditModal('edit')
     setForm({
+      account_type: rule.account_type || '个人',
       category: rule.category || '线上学习',
       rule_name: rule.rule_name || rule.name || '',
       default_points: rule.default_points || '',
@@ -64,6 +62,7 @@ export default function AdminPointRules() {
       count_in_available: rule.count_in_available !== false,
       need_approval: rule.need_approval || false,
       description: rule.description || '',
+      scoring_standard: rule.scoring_standard || '',
       id: rule.id,
     })
   }
@@ -147,6 +146,7 @@ export default function AdminPointRules() {
             <table className="w-full">
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50">
+                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">计分对象</th>
                   <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">分类</th>
                   <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">规则名称</th>
                   <th className="text-right px-4 py-3 text-xs font-medium text-gray-500">默认积分</th>
@@ -160,6 +160,7 @@ export default function AdminPointRules() {
               <tbody className="divide-y divide-gray-50">
                 {rules.map((r) => (
                   <tr key={r.id} className="hover:bg-gray-50">
+                    <td className="px-4 py-3"><span className={`text-xs px-2 py-1 rounded-full ${r.account_type === '团队' ? 'bg-orange-50 text-orange-600' : 'bg-indigo-50 text-indigo-600'}`}>{r.account_type || '个人'}</span></td>
                     <td className="px-4 py-3 text-sm text-gray-700">{r.category || '-'}</td>
                     <td className="px-4 py-3 text-sm font-medium text-gray-900">{r.rule_name || r.name}</td>
                     <td className="px-4 py-3 text-sm font-semibold text-indigo-600 text-right">{r.default_points || 0}</td>
@@ -194,9 +195,15 @@ export default function AdminPointRules() {
             </div>
             <div className="space-y-4">
               <div>
+                <label className="block text-sm text-gray-600 mb-1">计分对象</label>
+                <select value={form.account_type} onChange={(e) => setForm({...form, account_type: e.target.value, category: e.target.value === '团队' ? '线上案例沟通' : '线上学习', count_in_available: e.target.value !== '团队'})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm">
+                  <option value="个人">个人积分</option><option value="团队">团队积分</option>
+                </select>
+              </div>
+              <div>
                 <label className="block text-sm text-gray-600 mb-1">分类</label>
                 <select value={form.category} onChange={(e) => setForm({...form, category: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500">
-                  {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                  {(form.account_type === '团队' ? TEAM_CATEGORIES : PERSONAL_CATEGORIES).map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
               </div>
               <div>
@@ -247,13 +254,17 @@ export default function AdminPointRules() {
                   计入本期积分
                 </label>
                 <label className="flex items-center gap-2 text-sm">
-                  <input type="checkbox" checked={form.count_in_available} onChange={(e) => setForm({...form, count_in_available: e.target.checked})} className="rounded" />
-                  计入可用积分
+                  <input type="checkbox" disabled={form.account_type === '团队'} checked={form.account_type === '团队' ? false : form.count_in_available} onChange={(e) => setForm({...form, count_in_available: e.target.checked})} className="rounded" />
+                  计入可兑换积分（团队积分不可兑换）
                 </label>
                 <label className="flex items-center gap-2 text-sm">
                   <input type="checkbox" checked={form.need_approval} onChange={(e) => setForm({...form, need_approval: e.target.checked})} className="rounded" />
                   需要审批
                 </label>
+              </div>
+              <div>
+                <label className="block text-sm text-gray-600 mb-1">积分标准</label>
+                <textarea value={form.scoring_standard} onChange={(e) => setForm({...form, scoring_standard: e.target.value})} rows={2} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500" />
               </div>
               <div>
                 <label className="block text-sm text-gray-600 mb-1">描述</label>

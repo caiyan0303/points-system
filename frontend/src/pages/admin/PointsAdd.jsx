@@ -6,9 +6,8 @@ import { Plus, Upload, X, Trash2, Download, MessageCircle, Send, CheckCircle2 } 
 import * as XLSX from 'xlsx'
 
 const CATEGORIES = [
-  '线上学习', '线上考试', '学习输出', '问卷反馈', '线下出勤',
-  '课堂互动', '课堂任务', '实践任务', '成果转化', '团队共创', '团队贡献',
-  '小组长职责', '项目贡献', '特殊调整'
+  '线上学习', '学习输出', '问卷及测评反馈', '线下出勤',
+  '课堂互动', '结营任务', '小组长职责', '特殊调整'
 ]
 
 const beijingToday = () => new Intl.DateTimeFormat('en-CA', {
@@ -33,7 +32,7 @@ export default function AdminPointsAdd() {
   // Single entry
   const [singleForm, setSingleForm] = useState({
     student_id: '', year_id: '', project_id: '', group_id: '', phase_id: '',
-    points: '', category: '线上学习', description: '', obtained_date: beijingToday()
+    points: '', category: '线上学习', item_name: '', description: '', source_note: '', obtained_date: beijingToday()
   })
   const [smartText, setSmartText] = useState('')
   const [smartPreview, setSmartPreview] = useState(null)
@@ -69,14 +68,18 @@ export default function AdminPointsAdd() {
   }, [])
 
   const handleSingleSubmit = async () => {
-    if (!singleForm.student_id || !singleForm.points) return showToast('请选择学员并输入积分', 'error')
+    if (!singleForm.student_id || !singleForm.phase_id || !singleForm.points || !singleForm.item_name.trim()) return showToast('请选择学员和所属阶段，并填写积分事项和积分值', 'error')
+    if (singleForm.category === '特殊调整' && !singleForm.description.trim()) return showToast('特殊调整必须填写调整原因', 'error')
     setSubmitting(true)
     try {
       const payload = {
         student_id: parseInt(singleForm.student_id),
         points: parseInt(singleForm.points),
         category: singleForm.category,
+        item_name: singleForm.item_name,
+        task_key: singleForm.item_name,
         description: singleForm.description,
+        source_note: singleForm.source_note,
         obtained_date: singleForm.obtained_date,
       }
       if (singleForm.phase_id) payload.phase_id = parseInt(singleForm.phase_id)
@@ -85,7 +88,7 @@ export default function AdminPointsAdd() {
       if (singleForm.group_id) payload.group_id = parseInt(singleForm.group_id)
       await api.post('/api/admin/points', payload)
       showToast(`${singleForm.points} 积分已录入`)
-      setSingleForm({ student_id: '', year_id: '', project_id: '', group_id: '', phase_id: '', points: '', category: '线上学习', description: '', obtained_date: beijingToday() })
+      setSingleForm({ student_id: '', year_id: '', project_id: '', group_id: '', phase_id: '', points: '', category: '线上学习', item_name: '', description: '', source_note: '', obtained_date: beijingToday() })
     } catch (err) { showToast(err.response?.data?.detail || '录入失败', 'error') }
     finally { setSubmitting(false) }
   }
@@ -124,19 +127,19 @@ export default function AdminPointsAdd() {
       .sort((a, b) => b.name.length - a.name.length)
     const longestProjectName = projectMatches[0]?.name
     projectMatches = projectMatches.filter(project => (
-      project.name === longestProjectName && (!mentionedYear || project.year_id === mentionedYear.id)
+      project.name === longestProjectName && (!mentionedYear || String(project.year_id) === String(mentionedYear.id))
     ))
     if (projectMatches.length > 1) {
       const activeMatches = projectMatches.filter(project => project.status === 'active')
       if (activeMatches.length === 1) projectMatches = activeMatches
     }
     if (projectMatches.length === 0 && student?.project_id) {
-      const assignedProject = projects.find(project => project.id === student.project_id && isCurrentProject(project))
+      const assignedProject = projects.find(project => String(project.id) === String(student.project_id) && isCurrentProject(project))
       if (assignedProject) projectMatches = [assignedProject]
     }
     const project = projectMatches.length === 1 ? projectMatches[0] : null
 
-    const phaseCandidates = phases.filter(phase => !project || phase.project_id === project.id)
+    const phaseCandidates = phases.filter(phase => !project || String(phase.project_id) === String(project.id))
     const phaseWasMentioned = /第[一二三四五六七八九十百0-9]+阶段/.test(text)
     let phaseMatches = phaseCandidates.filter(phase => {
       const shortName = phase.name?.match(/第[一二三四五六七八九十百0-9]+阶段/)?.[0]
@@ -146,7 +149,7 @@ export default function AdminPointsAdd() {
     const phase = phaseMatches.length === 1 ? phaseMatches[0] : null
 
     const category = CATEGORIES.find(item => text.includes(item))
-    const year = years.find(item => item.id === (mentionedYear?.id || student?.year_id || project?.year_id))
+    const year = years.find(item => String(item.id) === String(mentionedYear?.id || student?.year_id || project?.year_id))
     const errors = []
     if (studentMatches.length === 0) errors.push('未识别到学员姓名')
     if (studentMatches.length > 1) errors.push(`存在多位“${longestStudentName}”，请补充邮箱后使用批量或 Excel 录入`)
@@ -185,6 +188,8 @@ export default function AdminPointsAdd() {
         phase_id: smartPreview.phase_id,
         points: smartPreview.points,
         category: smartPreview.category,
+        item_name: smartPreview.description,
+        task_key: smartPreview.description,
         description: smartPreview.description,
         obtained_date: smartPreview.obtained_date,
       })
@@ -204,23 +209,23 @@ export default function AdminPointsAdd() {
     setSubmitting(true)
     try {
       const results = await Promise.allSettled(validRows.map(r => {
-        const student = students.find(item => item.id === parseInt(r.student_id))
+        const student = students.find(item => String(item.id) === String(r.student_id))
         const today = beijingToday()
         const project = projects.find(item => (
-          item.id === student?.project_id
+          String(item.id) === String(student?.project_id)
           && item.status === 'active'
           && (!item.start_date || item.start_date.slice(0, 10) <= today)
           && (!item.end_date || item.end_date.slice(0, 10) >= today)
         ))
         const currentPhases = phases.filter(item => (
-          item.project_id === project?.id
+          String(item.project_id) === String(project?.id)
           && (item.status === '进行中' || (item.start_date?.slice(0, 10) <= today && item.end_date?.slice(0, 10) >= today))
         ))
         const phase = r.phase_id
-          ? phases.find(item => item.id === parseInt(r.phase_id) && item.project_id === project?.id)
+          ? phases.find(item => String(item.id) === String(r.phase_id) && String(item.project_id) === String(project?.id))
           : currentPhases.length === 1 ? currentPhases[0] : null
         if (!student?.year_id || !project || !phase) return Promise.reject(new Error('无法自动识别学员的当前项目或阶段'))
-        const group = groups.find(item => item.name === student.group_name && item.project_id === project.id)
+        const group = groups.find(item => item.name === student.group_name && String(item.project_id) === String(project.id))
         const payload = {
           student_id: parseInt(r.student_id),
           year_id: student.year_id,
@@ -228,6 +233,8 @@ export default function AdminPointsAdd() {
           phase_id: phase.id,
           points: parseInt(r.points),
           category: r.category,
+          item_name: r.description || r.category,
+          task_key: r.description || r.category,
           description: r.description,
           obtained_date: r.obtained_date,
         }
@@ -309,7 +316,7 @@ export default function AdminPointsAdd() {
         const studentName = clean(getValue(row, '姓名', '学员姓名', 'student_name', 'real_name'))
         const studentEmail = clean(getValue(row, '邮箱', 'email'))
         const requestedStudentId = parseInt(getValue(row, '学员ID', 'student_id'))
-        let student = Number.isInteger(requestedStudentId) ? students.find(item => item.id === requestedStudentId) : null
+        let student = Number.isInteger(requestedStudentId) ? students.find(item => String(item.id) === String(requestedStudentId)) : null
         if (!student && studentEmail) student = students.find(item => clean(item.email).toLowerCase() === studentEmail.toLowerCase())
         if (!student && studentName) {
           const matches = students.filter(item => clean(item.real_name) === studentName || clean(item.username) === studentName)
@@ -319,41 +326,41 @@ export default function AdminPointsAdd() {
         const yearName = clean(getValue(row, '所属年度', '年度', 'year_name'))
         const requestedYearId = parseInt(getValue(row, '年度ID', 'year_id'))
         let year = Number.isInteger(requestedYearId)
-          ? years.find(item => item.id === requestedYearId)
+          ? years.find(item => String(item.id) === String(requestedYearId))
           : yearName
             ? years.find(item => clean(item.name).replace(/年度$/, '') === yearName.replace(/年度$/, ''))
-            : years.find(item => item.id === student?.year_id)
+            : years.find(item => String(item.id) === String(student?.year_id))
 
         const projectName = clean(getValue(row, '培训项目', '项目名称', 'project_name'))
         const requestedProjectId = parseInt(getValue(row, '项目ID', 'project_id'))
         let project = Number.isInteger(requestedProjectId)
-          ? projects.find(item => item.id === requestedProjectId)
+          ? projects.find(item => String(item.id) === String(requestedProjectId))
           : projectName
-            ? projects.find(item => clean(item.name) === projectName && (!year || item.year_id === year.id))
-            : projects.find(item => item.id === student?.project_id && isCurrentProject(item))
-        if (!year && project) year = years.find(item => item.id === project.year_id)
+            ? projects.find(item => clean(item.name) === projectName && (!year || String(item.year_id) === String(year.id)))
+            : projects.find(item => String(item.id) === String(student?.project_id) && isCurrentProject(item))
+        if (!year && project) year = years.find(item => String(item.id) === String(project.year_id))
 
         const phaseName = clean(getValue(row, '培训阶段', '阶段名称', 'phase_name'))
         const requestedPhaseId = parseInt(getValue(row, '阶段ID', 'phase_id'))
         let phase = Number.isInteger(requestedPhaseId)
-          ? phases.find(item => item.id === requestedPhaseId)
+          ? phases.find(item => String(item.id) === String(requestedPhaseId))
           : phaseName
             ? phases.find(item => {
               const systemName = clean(item.name)
               const shortName = systemName.match(/第[一二三四五六七八九十百0-9]+阶段/)?.[0]
-              return (systemName === phaseName || shortName === phaseName) && (!project || item.project_id === project.id)
+              return (systemName === phaseName || shortName === phaseName) && (!project || String(item.project_id) === String(project.id))
             })
             : null
         if (!phase && !phaseName && project) {
-          const currentPhases = phases.filter(item => item.project_id === project.id && isCurrentPhase(item))
+          const currentPhases = phases.filter(item => String(item.project_id) === String(project.id) && isCurrentPhase(item))
           if (currentPhases.length === 1) phase = currentPhases[0]
         }
 
         const groupName = clean(getValue(row, '所属小组', '小组名称', 'group_name'))
         const requestedGroupId = parseInt(getValue(row, '小组ID', 'group_id'))
         const group = Number.isInteger(requestedGroupId)
-          ? groups.find(item => item.id === requestedGroupId)
-          : groups.find(item => clean(item.name) === (groupName || clean(student?.group_name)) && (!project || item.project_id === project.id))
+          ? groups.find(item => String(item.id) === String(requestedGroupId))
+          : groups.find(item => clean(item.name) === (groupName || clean(student?.group_name)) && (!project || String(item.project_id) === String(project.id)))
 
         const recordNumber = clean(getValue(row, '记录编号', 'record_number'))
         const points = Number(getValue(row, '积分值', '积分数值', '积分', 'points'))
@@ -394,12 +401,12 @@ export default function AdminPointsAdd() {
           group_id: group?.id || null,
           points,
           category: pointCategory,
+          item_name: item,
+          task_key: taskName || item,
+          data_source: dataSource || 'Excel导入',
+          source_note: evidence,
           description: [
-            item,
-            taskName && `任务：${taskName}`,
             completionLevel && `完成档位：${completionLevel}`,
-            dataSource && `数据来源：${dataSource}`,
-            evidence && `证明材料：${evidence}`,
             note && `备注：${note}`,
           ].filter(Boolean).join('；'),
           obtained_date: obtainedDate,
@@ -438,7 +445,11 @@ export default function AdminPointsAdd() {
           student_id: parseInt(r.student_id),
           points: parseInt(r.points),
           category: r.category || '线上学习',
+          item_name: r.item_name || r.description || r.category || '积分任务',
+          task_key: r.task_key || r.item_name || r.description || r.category || '积分任务',
           description: r.description || '',
+          data_source: r.data_source || 'Excel导入',
+          source_note: r.source_note || '',
           obtained_date: r.obtained_date || beijingToday(),
           year_id: parseInt(r.year_id),
           project_id: parseInt(r.project_id),
@@ -566,7 +577,7 @@ export default function AdminPointsAdd() {
                     <div className="absolute z-10 w-full bg-white border border-gray-200 rounded-lg shadow-lg mt-1 p-3 text-sm text-gray-400">未找到匹配学员</div>
                   )}
                 </div>
-                {singleForm.student_id && <p className="text-xs text-green-600 mt-1">已选择: {students.find(s => s.id === parseInt(singleForm.student_id))?.real_name}</p>}
+                {singleForm.student_id && <p className="text-xs text-green-600 mt-1">已选择: {students.find(s => String(s.id) === String(singleForm.student_id))?.real_name}</p>}
               </div>
               <div>
                 <label className="block text-sm text-gray-600 mb-1">积分 *</label>
@@ -590,6 +601,7 @@ export default function AdminPointsAdd() {
                 <select value={singleForm.category} onChange={(e) => setSingleForm({...singleForm, category: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500">
                   {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
+                {singleForm.category === '课堂互动' && <p className="text-xs text-indigo-500 mt-1">扑克牌：A=1，J=11，Q=12，K=13，小王=15，大王=20；同一场每人最多2次。</p>}
               </div>
               <div>
                 <label className="block text-sm text-gray-600 mb-1">年度</label>
@@ -613,7 +625,7 @@ export default function AdminPointsAdd() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm text-gray-600 mb-1">所属阶段</label>
+                <label className="block text-sm text-gray-600 mb-1">所属阶段 *</label>
                 <select value={singleForm.phase_id} onChange={(e) => setSingleForm({...singleForm, phase_id: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500">
                   <option value="">不关联</option>
                   {phases.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
@@ -624,8 +636,17 @@ export default function AdminPointsAdd() {
                 <input type="date" value={singleForm.obtained_date} onChange={(e) => setSingleForm({...singleForm, obtained_date: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500" />
               </div>
               <div className="col-span-2">
-                <label className="block text-sm text-gray-600 mb-1">说明</label>
-                <textarea value={singleForm.description} onChange={(e) => setSingleForm({...singleForm, description: e.target.value})} rows={2} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500" placeholder="积分说明" />
+                <label className="block text-sm text-gray-600 mb-1">积分事项 *</label>
+                <input value={singleForm.item_name} onChange={(e) => setSingleForm({...singleForm, item_name: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500" placeholder="例如：第一阶段《管理沟通》线上课程" />
+                <p className="text-xs text-gray-400 mt-1">同一积分事项、同一学员只计一次；课堂互动同一场最多计2次。</p>
+              </div>
+              <div className="col-span-2">
+                <label className="block text-sm text-gray-600 mb-1">备注 / 调整原因</label>
+                <textarea value={singleForm.description} onChange={(e) => setSingleForm({...singleForm, description: e.target.value})} rows={2} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500" placeholder={singleForm.category === '特殊调整' ? '特殊调整必须填写原因' : '可填写计分依据或补充说明'} />
+              </div>
+              <div className="col-span-2">
+                <label className="block text-sm text-gray-600 mb-1">数据来源说明</label>
+                <input value={singleForm.source_note} onChange={(e) => setSingleForm({...singleForm, source_note: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500" placeholder="例如：学习平台导出、签到表、现场记录" />
               </div>
             </div>
             <button onClick={handleSingleSubmit} disabled={submitting} className="hidden mt-6 px-6 py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50">

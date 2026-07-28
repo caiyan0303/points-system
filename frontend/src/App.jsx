@@ -23,6 +23,7 @@ import AdminGroups from './pages/admin/Groups'
 import AdminPhases from './pages/admin/Phases'
 import AdminPointsAdd from './pages/admin/PointsAdd'
 import AdminPointsRecords from './pages/admin/PointsRecords'
+import AdminTeamPoints from './pages/admin/TeamPoints'
 import AdminPointRules from './pages/admin/PointRules'
 import AdminProducts from './pages/admin/Products'
 import AdminRedemptions from './pages/admin/Redemptions'
@@ -68,6 +69,7 @@ function AppRoutes() {
       <Route path="/admin/phases" element={<ProtectedRoute role="admin"><AdminPhases /></ProtectedRoute>} />
       <Route path="/admin/points" element={<ProtectedRoute role="admin"><AdminPointsAdd /></ProtectedRoute>} />
       <Route path="/admin/points/records" element={<ProtectedRoute role="admin"><AdminPointsRecords /></ProtectedRoute>} />
+      <Route path="/admin/team-points" element={<ProtectedRoute role="admin"><AdminTeamPoints /></ProtectedRoute>} />
       <Route path="/admin/point-rules" element={<ProtectedRoute role="admin"><AdminPointRules /></ProtectedRoute>} />
       <Route path="/admin/products" element={<ProtectedRoute role="admin"><AdminProducts /></ProtectedRoute>} />
       <Route path="/admin/redemptions" element={<ProtectedRoute role="admin"><AdminRedemptions /></ProtectedRoute>} />

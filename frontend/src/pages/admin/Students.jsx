@@ -9,9 +9,8 @@ import {
 } from 'lucide-react'
 import * as XLSX from 'xlsx'
 const CATEGORIES = [
-  '线上学习', '线上考试', '学习输出', '问卷反馈', '线下出勤',
-  '课堂互动', '课堂任务', '实践任务', '成果转化', '团队共创', '团队贡献',
-  '小组长职责', '项目贡献', '特殊调整'
+  '线上学习', '学习输出', '问卷及测评反馈', '线下出勤',
+  '课堂互动', '结营任务', '小组长职责', '特殊调整'
 ]
 
 export default function AdminStudents() {
@@ -103,10 +102,12 @@ export default function AdminStudents() {
 
   // Single point add
   const handleAddPoints = async () => {
+    if (!pointForm.phase_id || !pointForm.description.trim()) return showToast('请选择阶段并填写积分事项', 'error')
     try {
       await api.post('/api/admin/points', {
         student_id: pointModal.student_id, points: parseInt(pointForm.points),
         category: pointForm.category, description: pointForm.description,
+        item_name: pointForm.description, task_key: pointForm.description,
         phase_id: pointForm.phase_id ? parseInt(pointForm.phase_id) : null,
       })
       showToast(`已添加 ${pointForm.points} 积分`)
@@ -118,12 +119,13 @@ export default function AdminStudents() {
   // Batch point add/subtract
   const handleBatchPoints = async () => {
     if (selectedIds.size === 0) return showToast('请先选择学员', 'error')
-    if (!batchPointForm.points) return showToast('请输入积分数', 'error')
+    if (!batchPointForm.points || !batchPointForm.phase_id || !batchPointForm.description.trim()) return showToast('请输入积分数、选择阶段并填写积分事项', 'error')
     const pts = parseInt(batchPointForm.points)
     try {
       const records = [...selectedIds].map(sid => ({
         student_id: sid, points: pts, category: batchPointForm.category,
         description: batchPointForm.description,
+        item_name: batchPointForm.description, task_key: batchPointForm.description,
         phase_id: batchPointForm.phase_id ? parseInt(batchPointForm.phase_id) : null,
       }))
       await api.post('/api/admin/points/batch', { records })
@@ -426,10 +428,10 @@ export default function AdminStudents() {
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-3">
                 <div><label className="block text-sm text-gray-600 mb-1">积分数 *</label><input type="number" value={pointForm.points} onChange={(e) => setPointForm({...pointForm, points: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" /></div>
-                <div><label className="block text-sm text-gray-600 mb-1">所属阶段</label><select value={pointForm.phase_id} onChange={(e) => setPointForm({...pointForm, phase_id: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"><option value="">不关联</option>{phases.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></div>
+                <div><label className="block text-sm text-gray-600 mb-1">所属阶段 *</label><select value={pointForm.phase_id} onChange={(e) => setPointForm({...pointForm, phase_id: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"><option value="">请选择</option>{phases.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></div>
               </div>
               <div><label className="block text-sm text-gray-600 mb-1">分类</label><select value={pointForm.category} onChange={(e) => setPointForm({...pointForm, category: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm">{CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
-              <div><label className="block text-sm text-gray-600 mb-1">说明</label><textarea value={pointForm.description} onChange={(e) => setPointForm({...pointForm, description: e.target.value})} rows={2} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" /></div>
+              <div><label className="block text-sm text-gray-600 mb-1">积分事项 / 调整原因 *</label><textarea value={pointForm.description} onChange={(e) => setPointForm({...pointForm, description: e.target.value})} rows={2} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" /></div>
             </div>
             <div className="flex gap-3 mt-6"><button onClick={() => setPointModal(null)} className="flex-1 py-2.5 text-sm border border-gray-200 rounded-lg hover:bg-gray-50">取消</button><button onClick={handleAddPoints} className="flex-1 py-2.5 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">确认</button></div>
           </div>
@@ -444,10 +446,10 @@ export default function AdminStudents() {
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-3">
                 <div><label className="block text-sm text-gray-600 mb-1">积分数 *（负数=减分）</label><input type="number" value={batchPointForm.points} onChange={(e) => setBatchPointForm({...batchPointForm, points: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" placeholder="输入积分数，负数表示扣减" /></div>
-                <div><label className="block text-sm text-gray-600 mb-1">所属阶段</label><select value={batchPointForm.phase_id} onChange={(e) => setBatchPointForm({...batchPointForm, phase_id: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"><option value="">不关联</option>{phases.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></div>
+                <div><label className="block text-sm text-gray-600 mb-1">所属阶段 *</label><select value={batchPointForm.phase_id} onChange={(e) => setBatchPointForm({...batchPointForm, phase_id: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"><option value="">请选择</option>{phases.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></div>
               </div>
               <div><label className="block text-sm text-gray-600 mb-1">分类</label><select value={batchPointForm.category} onChange={(e) => setBatchPointForm({...batchPointForm, category: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm">{CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
-              <div><label className="block text-sm text-gray-600 mb-1">说明</label><textarea value={batchPointForm.description} onChange={(e) => setBatchPointForm({...batchPointForm, description: e.target.value})} rows={2} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" /></div>
+              <div><label className="block text-sm text-gray-600 mb-1">积分事项 / 调整原因 *</label><textarea value={batchPointForm.description} onChange={(e) => setBatchPointForm({...batchPointForm, description: e.target.value})} rows={2} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" /></div>
             </div>
             <div className="flex gap-3 mt-6"><button onClick={() => setBatchPointModal(false)} className="flex-1 py-2.5 text-sm border border-gray-200 rounded-lg hover:bg-gray-50">取消</button><button onClick={handleBatchPoints} className="flex-1 py-2.5 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">确认批量操作</button></div>
           </div>

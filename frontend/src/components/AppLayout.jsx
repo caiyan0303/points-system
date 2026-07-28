@@ -27,7 +27,8 @@ const adminGroups = [
     key: 'points', label: '积分管理', icon: TrendingUp,
     items: [
       { path: '/admin/points', icon: PlusCircle, label: '积分录入' },
-      { path: '/admin/points/records', icon: ListChecks, label: '积分流水' },
+      { path: '/admin/team-points', icon: UsersRound, label: '团队积分' },
+      { path: '/admin/points/records', icon: ListChecks, label: '个人积分流水' },
       { path: '/admin/point-rules', icon: ScrollText, label: '积分规则' },
     ]
   },

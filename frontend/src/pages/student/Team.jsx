@@ -35,6 +35,7 @@ export default function StudentTeam() {
 
   const group = teamData.group || {}
   const members = teamData.members || []
+  const teamPointRecords = teamData.team_point_records || []
 
   return (
     <AppLayout>
@@ -53,12 +54,16 @@ export default function StudentTeam() {
           </div>
           <div className="flex items-center gap-6">
             <div className="text-center">
-              <p className="text-2xl font-bold text-indigo-600">{group.total_points || 0}</p>
-              <p className="text-xs text-gray-400">总积分</p>
+              <p className="text-2xl font-bold text-indigo-600">{group.personal_points || 0}</p>
+              <p className="text-xs text-gray-400">成员个人积分合计</p>
             </div>
             <div className="text-center">
-              <p className="text-2xl font-bold text-green-600">{group.avg_points || 0}</p>
-              <p className="text-xs text-gray-400">平均积分</p>
+              <p className="text-2xl font-bold text-orange-600">{group.team_points || 0}</p>
+              <p className="text-xs text-gray-400">团队积分</p>
+            </div>
+            <div className="text-center">
+              <p className="text-2xl font-bold text-green-600">{group.final_score || 0}</p>
+              <p className="text-xs text-gray-400">团队最终得分</p>
             </div>
             <div className="text-center">
               <p className="text-2xl font-bold text-orange-600">{group.rank ? `第${group.rank}名` : '-'}</p>
@@ -66,6 +71,11 @@ export default function StudentTeam() {
             </div>
           </div>
         </div>
+      </div>
+
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden mt-6">
+        <div className="px-5 py-4 border-b"><h3 className="font-semibold">团队积分明细</h3></div>
+        <div className="overflow-x-auto"><table className="w-full text-sm"><thead className="bg-gray-50 text-gray-500"><tr><th className="px-4 py-3 text-left">阶段</th><th className="px-4 py-3 text-left">分类</th><th className="px-4 py-3 text-left">积分事项</th><th className="px-4 py-3 text-right">团队积分</th><th className="px-4 py-3 text-left">获得时间</th></tr></thead><tbody className="divide-y">{teamPointRecords.map(r => <tr key={r.id}><td className="px-4 py-3 text-gray-500">{r.phase_name || '项目级'}</td><td className="px-4 py-3">{r.category}</td><td className="px-4 py-3">{r.item_name}</td><td className="px-4 py-3 text-right font-semibold text-orange-600">{Number(r.points) > 0 ? '+' : ''}{r.points}</td><td className="px-4 py-3 text-gray-500">{r.obtained_date?.slice(0,10)}</td></tr>)}</tbody></table>{!teamPointRecords.length && <p className="py-8 text-center text-sm text-gray-400">暂无团队积分</p>}</div>
       </div>
 
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">

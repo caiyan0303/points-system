@@ -278,8 +278,9 @@ export default function AdminPhases({ embedded = false, initialProjectId = '' })
                           <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">排名</th>
                           <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">小组</th>
                           <th className="text-right px-4 py-3 text-xs font-medium text-gray-500">成员数</th>
-                          <th className="text-right px-4 py-3 text-xs font-medium text-gray-500">总积分</th>
-                          <th className="text-right px-4 py-3 text-xs font-medium text-gray-500">平均积分</th>
+                          <th className="text-right px-4 py-3 text-xs font-medium text-gray-500">成员个人积分</th>
+                          <th className="text-right px-4 py-3 text-xs font-medium text-gray-500">团队积分</th>
+                          <th className="text-right px-4 py-3 text-xs font-medium text-gray-500">最终得分</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-50">
@@ -295,8 +296,9 @@ export default function AdminPhases({ embedded = false, initialProjectId = '' })
                             </td>
                             <td className="px-4 py-3 text-sm font-medium text-gray-900">{g.group_name}</td>
                             <td className="px-4 py-3 text-sm text-gray-500 text-right">{g.member_count}</td>
-                            <td className="px-4 py-3 text-sm font-semibold text-indigo-600 text-right">{g.total_points}</td>
-                            <td className="px-4 py-3 text-sm text-gray-500 text-right">{g.avg_points}</td>
+                            <td className="px-4 py-3 text-sm text-indigo-600 text-right">{g.personal_points || 0}</td>
+                            <td className="px-4 py-3 text-sm text-orange-600 text-right">{g.team_points || 0}</td>
+                            <td className="px-4 py-3 text-sm font-semibold text-green-600 text-right">{g.final_score || g.total_points || 0}</td>
                           </tr>
                         ))}
                       </tbody>

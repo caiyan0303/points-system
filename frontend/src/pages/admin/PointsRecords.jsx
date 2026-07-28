@@ -6,9 +6,8 @@ import Toast from '../../components/Toast'
 import { Search, RefreshCw, Download, Eye, X, Trash2 } from 'lucide-react'
 
 const CATEGORIES = [
-  '线上学习', '线上考试', '学习输出', '问卷反馈', '线下出勤',
-  '课堂互动', '课堂任务', '实践任务', '成果转化', '团队共创', '团队贡献',
-  '小组长职责', '项目贡献', '特殊调整'
+  '线上学习', '学习输出', '问卷及测评反馈', '线下出勤',
+  '课堂互动', '结营任务', '小组长职责', '特殊调整'
 ]
 
 const SOURCE_BADGES = {
@@ -113,8 +112,8 @@ export default function AdminPointsRecords() {
       <Toast message={toast?.msg} type={toast?.type} onClose={() => setToast(null)} />
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">积分流水</h1>
-          <p className="text-gray-500 mt-1">查看所有积分变动记录</p>
+          <h1 className="text-2xl font-bold text-gray-900">个人积分流水</h1>
+          <p className="text-gray-500 mt-1">查看个人积分变动；团队积分请在“团队积分”中查看</p>
         </div>
         <div className="flex items-center gap-2">
           {selectedIds.length > 0 && (
@@ -190,6 +189,7 @@ export default function AdminPointsRecords() {
                   <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">项目名称</th>
                   <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">所属阶段</th>
                   <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">积分分类</th>
+                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">积分事项</th>
                   <th className="text-right px-4 py-3 text-xs font-medium text-gray-500">积分变化</th>
                   <th className="text-center px-4 py-3 text-xs font-medium text-gray-500">数据来源</th>
                   <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">操作人员</th>
@@ -216,6 +216,7 @@ export default function AdminPointsRecords() {
                     <td className="px-4 py-3 text-sm text-gray-600 max-w-[180px] truncate" title={r.project_name || ''}>{r.project_name || '-'}</td>
                     <td className="px-4 py-3 text-sm text-gray-500">{r.phase_name || '-'}</td>
                     <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">{r.category || '-'}</td>
+                    <td className="px-4 py-3 text-sm text-gray-600 max-w-[220px] truncate" title={r.item_name || r.description || ''}>{r.item_name || r.description || '-'}</td>
                     <td className={`px-4 py-3 text-sm font-semibold text-right ${r.points > 0 ? 'text-green-600' : 'text-red-600'}`}>
                       {r.points > 0 ? '+' : ''}{r.points}
                     </td>
@@ -259,8 +260,11 @@ export default function AdminPointsRecords() {
               <div className="flex justify-between"><span className="text-gray-500">项目名称</span><span>{viewDetail.project_name || '-'}</span></div>
               <div className="flex justify-between"><span className="text-gray-500">积分变化</span><span className={`font-semibold ${viewDetail.points > 0 ? 'text-green-600' : 'text-red-600'}`}>{viewDetail.points > 0 ? '+' : ''}{viewDetail.points}</span></div>
               <div className="flex justify-between"><span className="text-gray-500">分类</span><span>{viewDetail.category || '-'}</span></div>
+              <div className="flex justify-between"><span className="text-gray-500">计分对象</span><span>个人</span></div>
+              <div className="flex justify-between"><span className="text-gray-500">积分事项</span><span>{viewDetail.item_name || '-'}</span></div>
               <div className="flex justify-between"><span className="text-gray-500">阶段</span><span>{viewDetail.phase_name || '-'}</span></div>
               <div className="flex justify-between"><span className="text-gray-500">说明</span><span>{viewDetail.description || '-'}</span></div>
+              <div className="flex justify-between"><span className="text-gray-500">来源说明</span><span>{viewDetail.source_note || '-'}</span></div>
               <div className="flex justify-between"><span className="text-gray-500">操作人</span><span>{viewDetail.operator_name || '-'}</span></div>
               <div className="flex justify-between"><span className="text-gray-500">时间</span><span>{new Date(viewDetail.created_at).toLocaleString('zh-CN')}</span></div>
             </div>

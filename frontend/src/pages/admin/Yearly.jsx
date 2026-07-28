@@ -33,8 +33,9 @@ export default function AdminYearly() {
     projects: summary.projects + (year.project_count || 0),
     students: summary.students + (year.student_count || 0),
     earned: summary.earned + (year.earned_points || 0),
+    team: summary.team + (year.team_points || 0),
     redemptions: summary.redemptions + (year.redemption_count || 0),
-  }), { projects: 0, students: 0, earned: 0, redemptions: 0 }), [years])
+  }), { projects: 0, students: 0, earned: 0, team: 0, redemptions: 0 }), [years])
 
   return (
     <AppLayout>
@@ -69,10 +70,11 @@ export default function AdminYearly() {
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-4 gap-4 mb-6">
+          <div className="grid grid-cols-5 gap-4 mb-6">
             <SummaryCard icon={FolderKanban} label="已归档项目" value={totals.projects} tone="indigo" />
             <SummaryCard icon={Users} label="覆盖学员" value={totals.students} tone="blue" />
             <SummaryCard icon={TrendingUp} label="累计获得积分" value={number(totals.earned)} tone="green" />
+            <SummaryCard icon={Layers} label="累计团队积分" value={number(totals.team)} tone="indigo" />
             <SummaryCard icon={Gift} label="兑换申请" value={totals.redemptions} tone="orange" />
           </div>
 
@@ -95,24 +97,27 @@ export default function AdminYearly() {
                         已归档 {year.project_count} / 全部 {year.total_project_count} 个项目
                       </p>
                     </div>
-                    <div className="grid grid-cols-5 gap-7 flex-1">
+                    <div className="grid grid-cols-6 gap-7 flex-1">
                       <CompactMetric label="学员" value={year.student_count} />
                       <CompactMetric label="小组" value={year.group_count} />
                       <CompactMetric label="阶段" value={year.phase_count} />
                       <CompactMetric label="获得积分" value={number(year.earned_points)} accent />
+                      <CompactMetric label="团队积分" value={number(year.team_points)} />
                       <CompactMetric label="兑换积分" value={number(year.redeemed_points)} />
                     </div>
                   </button>
 
                   {expanded && (
                     <div className="border-t border-gray-100 bg-gray-50 p-6 space-y-6">
-                      <div className="grid grid-cols-6 gap-3">
+                      <div className="grid grid-cols-8 gap-3">
                         <DetailMetric icon={TrendingUp} label="获得积分" value={number(year.earned_points)} color="text-green-600" />
                         <DetailMetric icon={TrendingDown} label="扣减积分" value={number(year.deducted_points)} color="text-red-500" />
                         <DetailMetric icon={ListChecks} label="积分记录" value={number(year.point_records)} color="text-indigo-600" />
                         <DetailMetric icon={Gift} label="兑换次数" value={number(year.redemption_count)} color="text-orange-600" />
                         <DetailMetric icon={Award} label="奖励发放" value={number(year.award_count)} color="text-yellow-600" />
                         <DetailMetric icon={Layers} label="净积分" value={number(year.net_points)} color="text-blue-600" />
+                        <DetailMetric icon={Users} label="团队积分" value={number(year.team_points)} color="text-orange-600" />
+                        <DetailMetric icon={Award} label="团队最终得分" value={number(year.team_final_score)} color="text-green-600" />
                       </div>
 
                       <div className="grid grid-cols-2 gap-5">
@@ -144,7 +149,7 @@ export default function AdminYearly() {
                               <div key={project.id} className="p-3 rounded-lg border border-gray-100 bg-gray-50">
                                 <div className="flex items-center justify-between mb-2">
                                   <span className="text-sm font-medium text-gray-900">{project.name}</span>
-                                  <span className="text-sm font-semibold text-indigo-600">{number(project.earned_points)} 分</span>
+                                  <span className="text-sm font-semibold text-indigo-600">个人 {number(project.earned_points)} / 团队 {number(project.team_points)} 分</span>
                                 </div>
                                 <div className="grid grid-cols-4 gap-2 text-xs text-gray-500">
                                   <span>{project.student_count} 学员</span>

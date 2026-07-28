@@ -5,9 +5,8 @@ import Pagination from '../../components/Pagination'
 import { TrendingUp, ShoppingBag, Award } from 'lucide-react'
 
 const CATEGORIES = [
-  '线上学习', '线上考试', '学习输出', '问卷反馈', '线下出勤',
-  '课堂互动', '课堂任务', '实践任务', '成果转化', '团队共创', '团队贡献',
-  '小组长职责', '项目贡献', '特殊调整'
+  '线上学习', '学习输出', '问卷及测评反馈', '线下出勤',
+  '课堂互动', '结营任务', '小组长职责', '特殊调整'
 ]
 
 export default function StudentPoints() {
@@ -134,18 +133,19 @@ export default function StudentPoints() {
               <tbody className="divide-y divide-gray-50">
                 {points.map((r) => (
                   <tr key={r.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3 text-sm text-gray-900 max-w-[200px] truncate">{r.description || r.category || '-'}</td>
+                    <td className="px-4 py-3 text-sm text-gray-900 max-w-[200px] truncate" title={r.item_name || r.description || ''}>{r.item_name || r.description || r.category || '-'}</td>
                     <td className={`px-4 py-3 text-sm font-semibold text-right ${r.points > 0 ? 'text-green-600' : 'text-red-600'}`}>
                       {r.points > 0 ? '+' : ''}{r.points}
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-500">{r.phase_name || '-'}</td>
-                    <td className="px-4 py-3 text-sm text-gray-500">{new Date(r.created_at || r.obtained_date).toLocaleString('zh-CN')}</td>
+                    <td className="px-4 py-3 text-sm text-gray-500">{new Date(r.obtained_date || r.created_at).toLocaleString('zh-CN')}</td>
                     <td className="px-4 py-3 text-sm">
                       <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">
                         {r.data_source || r.source || '-'}
                       </span>
+                      {r.source_note && <p className="text-xs text-gray-400 mt-1">{r.source_note}</p>}
                     </td>
-                    <td className="px-4 py-3 text-sm text-gray-500 max-w-[150px] truncate">{r.remark || r.description || '-'}</td>
+                    <td className="px-4 py-3 text-sm text-gray-500 max-w-[150px] truncate">{r.description || '-'}</td>
                   </tr>
                 ))}
               </tbody>

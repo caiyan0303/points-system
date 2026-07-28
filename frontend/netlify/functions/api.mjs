@@ -149,7 +149,7 @@ async function commonRoutes(request, pathname) {
     const admin=await requireUser(request,'admin');if(admin instanceof Response)return admin
     const input=await body(request);return json(await one('UPDATE academic_years SET name=COALESCE($1,name),status=COALESCE($2,status) WHERE id=$3 RETURNING *',[input.name||null,input.status||null,Number(yearMatch[1])]))
   }
-  if(pathname==='/api/common/phases/categories'&&request.method==='GET')return json(['线上学习','线上考试','学习输出','问卷反馈','线下出勤','课堂互动','课堂任务','实践任务','成果转化','团队共创','团队贡献','小组长职责','项目贡献','特殊调整'])
+  if(pathname==='/api/common/phases/categories'&&request.method==='GET')return json(['线上学习','学习输出','问卷及测评反馈','线下出勤','课堂互动','结营任务','小组长职责','特殊调整'])
   if (pathname === '/api/common/projects' && request.method === 'GET') {
     return json(await rows('SELECT * FROM training_projects ORDER BY year_id DESC, id DESC'))
   }
@@ -284,14 +284,15 @@ async function adminCoreRoutes(request, pathname, url) {
         FROM phase_participants pp JOIN users u ON u.id=pp.student_id LEFT JOIN groups g ON g.id=pp.group_id
         LEFT JOIN points pt ON pt.phase_id=pp.phase_id AND pt.student_id=pp.student_id
         WHERE pp.phase_id=$1 GROUP BY u.id,u.real_name,u.department,g.name,pp.is_excellent,pp.prize_given ORDER BY u.id`,[phaseId])
-      const phaseGroups = await rows(`SELECT g.id AS group_id,g.name AS group_name,COUNT(DISTINCT gm.student_id)::int AS member_count,
-        COALESCE(SUM(pt.points) FILTER (WHERE pt.status IN ('有效','active')),0)::int AS total_points
-        FROM phase_groups pg JOIN groups g ON g.id=pg.group_id LEFT JOIN group_members gm ON gm.group_id=g.id
-        LEFT JOIN points pt ON pt.phase_id=pg.phase_id AND pt.student_id=gm.student_id
-        WHERE pg.phase_id=$1 GROUP BY g.id,g.name ORDER BY g.id`,[phaseId])
+      const phaseGroups = await rows(`SELECT g.id AS group_id,g.name AS group_name,
+        (SELECT COUNT(*)::int FROM group_members gm WHERE gm.group_id=g.id) AS member_count,
+        COALESCE((SELECT SUM(pt.points) FROM points pt JOIN group_members gm ON gm.student_id=pt.student_id WHERE gm.group_id=g.id AND pt.phase_id=$1 AND pt.status IN ('有效','active')),0)::int AS personal_points,
+        COALESCE((SELECT SUM(tp.points) FROM team_points tp WHERE tp.group_id=g.id AND tp.phase_id=$1 AND tp.status IN ('有效','active')),0)::int AS team_points
+        FROM phase_groups pg JOIN groups g ON g.id=pg.group_id WHERE pg.phase_id=$1 GROUP BY g.id,g.name ORDER BY g.id`,[phaseId])
+      phaseGroups.forEach(group=>{group.total_points=Number(group.personal_points)+Number(group.team_points);group.final_score=group.total_points})
       const rankings = [...participants].sort((a,b)=>Number(b.total_points)-Number(a.total_points)).map((item,index)=>({...item,rank:index+1}))
       const groupRankings = phaseGroups.map(group=>({...group,avg_points:group.member_count ? Math.round(Number(group.total_points)*100/group.member_count)/100 : 0}))
-        .sort((a,b)=>b.avg_points-a.avg_points).map((item,index)=>({...item,rank:index+1}))
+        .sort((a,b)=>b.final_score-a.final_score).map((item,index)=>({...item,rank:index+1}))
       return json({...summary,participants,phase_groups:phaseGroups,rankings,group_rankings:groupRankings,
         excellent_members:participants.filter(item=>Number(item.is_excellent)===1)})
     }
@@ -470,6 +471,19 @@ const pageInfo = (url, fallback = 20) => {
   return {page,pageSize,offset:(page-1)*pageSize}
 }
 const csvCell = (value) => `"${String(value??'').replaceAll('"','""')}"`
+const taskKeyFor = (value) => String(value||'').trim().replace(/\s+/g,' ').toLowerCase()
+const validPointValues = (category, accountType) => {
+  if (category === '特殊调整') return null
+  if (accountType === '团队') return {
+    '线上案例沟通':[10,15,20], '线上案例输出':[10,15,20],
+    '阶段案例评优':[20], '沙盘共创':[10,20,30,40,50],
+  }[category] || []
+  return {
+    '线上学习':[5,10,15], '学习输出':[5,10,15], '问卷及测评反馈':[6],
+    '线下出勤':[5,10], '课堂互动':[1,2,3,4,5,6,7,8,9,10,11,12,13,15,20],
+    '结营任务':[5,15], '小组长职责':[10],
+  }[category] || []
+}
 
 async function adminExtendedRoutes(request, pathname, url) {
   const admin = await requireUser(request,'admin'); if (admin instanceof Response) return admin
@@ -481,7 +495,8 @@ async function adminExtendedRoutes(request, pathname, url) {
       ['阶段',`SELECT ph.id,y.name AS 年度,p.name AS 项目名称,ph.name AS 阶段名称,ph.start_date AS 开始时间,ph.end_date AS 结束时间,ph.status AS 状态 FROM phases ph LEFT JOIN academic_years y ON y.id=ph.year_id LEFT JOIN training_projects p ON p.id=ph.project_id ORDER BY ph.id`],
       ['学员',`SELECT u.id,u.real_name AS 姓名,u.username AS 登录账号,u.system AS 体系,u.level1_dept AS 一级部门,u.email AS 邮箱,u.phone AS 电话,u.account_status AS 账号状态,y.name AS 年度,p.name AS 项目名称,g.name AS 小组 FROM users u LEFT JOIN project_enrollments pe ON pe.student_id=u.id LEFT JOIN academic_years y ON y.id=pe.year_id LEFT JOIN training_projects p ON p.id=pe.project_id LEFT JOIN groups g ON g.id=pe.group_id WHERE u.role='student' ORDER BY u.id`],
       ['小组',`SELECT g.id,y.name AS 年度,p.name AS 项目名称,g.name AS 小组名称,COUNT(gm.student_id)::int AS 成员数 FROM groups g LEFT JOIN academic_years y ON y.id=g.year_id LEFT JOIN training_projects p ON p.id=g.project_id LEFT JOIN group_members gm ON gm.group_id=g.id GROUP BY g.id,y.name,p.name ORDER BY g.id`],
-      ['积分流水',`SELECT pt.id,pt.record_number AS 流水号,u.real_name AS 学员,y.name AS 年度,p.name AS 项目名称,ph.name AS 阶段,g.name AS 小组,pt.category AS 积分分类,pt.points AS 积分,pt.description AS 描述,pt.data_source AS 数据来源,pt.status AS 状态,pt.created_at AS 创建时间 FROM points pt JOIN users u ON u.id=pt.student_id LEFT JOIN academic_years y ON y.id=pt.year_id LEFT JOIN training_projects p ON p.id=pt.project_id LEFT JOIN phases ph ON ph.id=pt.phase_id LEFT JOIN groups g ON g.id=pt.group_id ORDER BY pt.id`],
+      ['个人积分流水',`SELECT pt.id,pt.record_number AS 流水号,u.real_name AS 学员,y.name AS 年度,p.name AS 项目名称,ph.name AS 阶段,g.name AS 小组,pt.category AS 积分分类,pt.item_name AS 积分事项,pt.points AS 积分,pt.data_source AS 数据来源,pt.source_note AS 来源说明,pt.description AS 备注,pt.status AS 状态,pt.obtained_date AS 获得时间,pt.created_at AS 创建时间 FROM points pt JOIN users u ON u.id=pt.student_id LEFT JOIN academic_years y ON y.id=pt.year_id LEFT JOIN training_projects p ON p.id=pt.project_id LEFT JOIN phases ph ON ph.id=pt.phase_id LEFT JOIN groups g ON g.id=pt.group_id ORDER BY pt.id`],
+      ['团队积分流水',`SELECT tp.id,tp.record_number AS 流水号,g.name AS 小组,y.name AS 年度,p.name AS 项目名称,ph.name AS 阶段,tp.category AS 积分分类,tp.item_name AS 积分事项,tp.points AS 积分,tp.data_source AS 数据来源,tp.source_note AS 来源说明,tp.remark AS 备注,tp.status AS 状态,tp.obtained_date AS 获得时间,tp.created_at AS 创建时间 FROM team_points tp JOIN groups g ON g.id=tp.group_id LEFT JOIN academic_years y ON y.id=tp.year_id LEFT JOIN training_projects p ON p.id=tp.project_id LEFT JOIN phases ph ON ph.id=tp.phase_id ORDER BY tp.id`],
       ['商品',`SELECT id,name AS 商品名称,points_required AS 所需积分,total_stock AS 总库存,available_stock AS 可用库存,on_site_stock AS 现场库存,product_status AS 状态,created_at AS 创建时间 FROM products ORDER BY id`],
       ['兑换',`SELECT r.id,u.real_name AS 学员,p.name AS 商品,r.points_spent AS 消耗积分,r.status AS 状态,r.reject_reason AS 拒绝原因,r.express_company AS 快递公司,r.tracking_number AS 快递单号,r.created_at AS 申请时间 FROM redemptions r JOIN users u ON u.id=r.student_id JOIN products p ON p.id=r.product_id ORDER BY r.id`],
       ['奖励',`SELECT pa.id,u.real_name AS 学员,p.name AS 商品,pa.award_type AS 奖励类型,pa.description AS 描述,pa.created_at AS 发放时间 FROM prize_awards pa JOIN users u ON u.id=pa.student_id JOIN products p ON p.id=pa.product_id ORDER BY pa.id`],
@@ -556,12 +571,15 @@ async function adminExtendedRoutes(request, pathname, url) {
 
   if (pathname === '/api/admin/groups' && request.method === 'GET') {
     const yearId=numberOrNull(url.searchParams.get('year_id')),projectId=numberOrNull(url.searchParams.get('project_id'))
-    return json(await rows(`SELECT g.*,y.name AS year_name,p.name AS project_name,
+    const groupItems=await rows(`SELECT g.*,y.name AS year_name,p.name AS project_name,
       (SELECT COUNT(*)::int FROM group_members gm WHERE gm.group_id=g.id) AS member_count,
-      COALESCE((SELECT SUM(pt.points)::int FROM points pt WHERE pt.group_id=g.id AND pt.status IN ('有效','active')),0) AS total_points
+      COALESCE((SELECT SUM(pt.points)::int FROM points pt JOIN group_members gm ON gm.student_id=pt.student_id WHERE gm.group_id=g.id AND pt.project_id=g.project_id AND pt.status IN ('有效','active')),0) AS personal_points,
+      COALESCE((SELECT SUM(tp.points)::int FROM team_points tp WHERE tp.group_id=g.id AND tp.project_id=g.project_id AND tp.status IN ('有效','active')),0) AS team_points
       FROM groups g LEFT JOIN academic_years y ON y.id=g.year_id LEFT JOIN training_projects p ON p.id=g.project_id
       WHERE ($1::bigint IS NULL OR g.year_id=$1) AND ($2::bigint IS NULL OR g.project_id=$2)
-      ORDER BY g.id DESC`,[yearId,projectId]))
+      ORDER BY g.id DESC`,[yearId,projectId])
+    groupItems.forEach(item=>{item.total_points=Number(item.personal_points)+Number(item.team_points);item.final_score=item.total_points})
+    return json(groupItems)
   }
   if (pathname === '/api/admin/groups' && request.method === 'POST') {
     const input=await body(request); const name=String(input.name||'').trim(),yearId=numberOrNull(input.year_id),projectId=numberOrNull(input.project_id)
@@ -575,9 +593,10 @@ async function adminExtendedRoutes(request, pathname, url) {
     if (!group) return json({detail:'小组不存在'},404)
     if (!pathname.includes('/members')&&request.method==='GET') {
       const members=await rows(`SELECT u.id AS student_id,u.real_name,u.system,u.level1_dept,gm.role,
-        COALESCE((SELECT SUM(points) FROM points WHERE student_id=u.id AND status IN ('有效','active')),0)::int AS total_points
-        FROM group_members gm JOIN users u ON u.id=gm.student_id WHERE gm.group_id=$1 ORDER BY u.id`,[groupId])
-      return json({...group,member_count:members.length,members,phase_stats:[],awards:[]})
+        COALESCE((SELECT SUM(points) FROM points WHERE student_id=u.id AND project_id=$2 AND status IN ('有效','active')),0)::int AS total_points
+        FROM group_members gm JOIN users u ON u.id=gm.student_id WHERE gm.group_id=$1 ORDER BY u.id`,[groupId,group.project_id])
+      const personalPoints=members.reduce((sum,item)=>sum+Number(item.total_points),0),teamPoints=Number((await one("SELECT COALESCE(SUM(points),0)::int AS total FROM team_points WHERE group_id=$1 AND project_id=$2 AND status IN ('有效','active')",[groupId,group.project_id]))?.total||0)
+      return json({...group,member_count:members.length,members,personal_points:personalPoints,team_points:teamPoints,total_points:personalPoints+teamPoints,final_score:personalPoints+teamPoints,avg_points:members.length?Math.round((personalPoints+teamPoints)*100/members.length)/100:0,phase_stats:[],awards:[]})
     }
     if(!pathname.includes('/members')&&request.method==='PUT'){const input=await body(request);return json(await one('UPDATE groups SET name=COALESCE($1,name),year_id=COALESCE($2,year_id),project_id=COALESCE($3,project_id),status=COALESCE($4,status) WHERE id=$5 RETURNING *',[input.name||null,numberOrNull(input.year_id),numberOrNull(input.project_id),input.status||null,groupId]))}
     if (pathname.endsWith('/members')&&request.method==='POST') {
@@ -594,7 +613,11 @@ async function adminExtendedRoutes(request, pathname, url) {
     if(phaseRankingRoute[2]==='ranking'){
       const ranking=await rows(`SELECT u.id AS student_id,u.real_name AS student_name,g.name AS group_name,u.level1_dept AS department,COALESCE(SUM(pt.points),0)::int AS total_points FROM points pt JOIN users u ON u.id=pt.student_id LEFT JOIN project_enrollments pe ON pe.student_id=u.id AND pe.project_id=pt.project_id LEFT JOIN groups g ON g.id=pe.group_id WHERE pt.phase_id=$1 AND pt.status IN ('有效','active') GROUP BY u.id,u.real_name,u.level1_dept,g.name ORDER BY total_points DESC`,[phaseId]);ranking.forEach((item,index)=>item.rank=index+1);return json(ranking)
     }
-    const ranking=await rows(`SELECT g.id AS group_id,g.name AS group_name,COUNT(DISTINCT gm.student_id)::int AS member_count,COALESCE(SUM(pt.points) FILTER(WHERE pt.status IN ('有效','active')),0)::int AS total_points FROM phase_groups pg JOIN groups g ON g.id=pg.group_id LEFT JOIN group_members gm ON gm.group_id=g.id LEFT JOIN points pt ON pt.student_id=gm.student_id AND pt.phase_id=pg.phase_id WHERE pg.phase_id=$1 GROUP BY g.id,g.name`,[phaseId]);ranking.forEach(item=>item.avg_points=item.member_count?Math.round(item.total_points*100/item.member_count)/100:0);ranking.sort((a,b)=>b.avg_points-a.avg_points).forEach((item,index)=>item.rank=index+1);return json(ranking)
+    const ranking=await rows(`SELECT g.id AS group_id,g.name AS group_name,
+      (SELECT COUNT(*)::int FROM group_members gm WHERE gm.group_id=g.id) AS member_count,
+      COALESCE((SELECT SUM(pt.points) FROM points pt JOIN group_members gm ON gm.student_id=pt.student_id WHERE gm.group_id=g.id AND pt.phase_id=$1 AND pt.status IN ('有效','active')),0)::int AS personal_points,
+      COALESCE((SELECT SUM(tp.points) FROM team_points tp WHERE tp.group_id=g.id AND tp.phase_id=$1 AND tp.status IN ('有效','active')),0)::int AS team_points
+      FROM phase_groups pg JOIN groups g ON g.id=pg.group_id WHERE pg.phase_id=$1 GROUP BY g.id,g.name`,[phaseId]);ranking.forEach(item=>{item.total_points=Number(item.personal_points)+Number(item.team_points);item.final_score=item.total_points;item.avg_points=item.member_count?Math.round(item.total_points*100/item.member_count)/100:0});ranking.sort((a,b)=>b.final_score-a.final_score).forEach((item,index)=>item.rank=index+1);return json(ranking)
   }
   const phasePointsRoute=pathname.match(/^\/api\/admin\/phases\/(\d+)\/points$/)
   if(phasePointsRoute&&request.method==='PUT'){const input=await body(request),phaseId=Number(phasePointsRoute[1]),records=Array.isArray(input)?input:(input.records||[]);for(const record of records){const fake=new Request(request.url,{method:'POST',headers:request.headers,body:JSON.stringify({...record,phase_id:phaseId})});await adminExtendedRoutes(fake,'/api/admin/points',url)}return json({message:`已录入 ${records.length} 条阶段积分`})}
@@ -602,13 +625,62 @@ async function adminExtendedRoutes(request, pathname, url) {
   if (pathname === '/api/admin/points' && request.method === 'POST') {
     const input=await body(request); const studentId=numberOrNull(input.student_id),points=Number(input.points)
     if (!studentId||!Number.isFinite(points)||points===0) return json({detail:'请选择学员并填写有效积分'},400)
-    const enrollment=await one('SELECT * FROM project_enrollments WHERE student_id=$1 ORDER BY year_id DESC LIMIT 1',[studentId])
-    const yearId=numberOrNull(input.year_id)||enrollment?.year_id||null,projectId=numberOrNull(input.project_id)||enrollment?.project_id||null,groupId=numberOrNull(input.group_id)||enrollment?.group_id||null
-    const record=await one(`INSERT INTO points(record_number,student_id,admin_id,year_id,project_id,phase_id,group_id,points,category,description,data_source,status,obtained_date)
-      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'有效',$12) RETURNING *`,[`PT${Date.now()}${randomBytes(3).toString('hex')}`,studentId,admin.id,yearId,projectId,numberOrNull(input.phase_id),groupId,points,input.category||'特殊调整',input.description||null,input.data_source||'单个录入',input.obtained_date||new Date().toISOString()])
+    const category=input.category||'特殊调整'
+    if (['线上考试','开放题'].includes(category)) return json({detail:`${category}属于必做任务，不设置积分`},400)
+    const allowed=validPointValues(category,'个人');if(allowed&&(!allowed.length||!allowed.includes(points)))return json({detail:`“${category}”积分值不符合当前规则`},400)
+    const itemName=String(input.item_name||input.description||category).trim(),taskKey=taskKeyFor(input.task_key||itemName)
+    if(!itemName)return json({detail:'请填写积分事项'},400)
+    if(category==='特殊调整'&&!String(input.description||'').trim())return json({detail:'特殊调整必须填写调整原因'},400)
+    const phaseId=numberOrNull(input.phase_id)
+    if(!phaseId)return json({detail:'每笔个人积分必须关联所属阶段'},400)
+    const phaseInfo=await one('SELECT id,year_id,project_id FROM phases WHERE id=$1',[phaseId]);if(!phaseInfo)return json({detail:'所选阶段不存在'},400)
+    const projectId=numberOrNull(input.project_id)||phaseInfo.project_id,projectEnrollment=await one('SELECT * FROM project_enrollments WHERE student_id=$1 AND project_id=$2',[studentId,projectId])
+    const yearId=numberOrNull(input.year_id)||phaseInfo.year_id||projectEnrollment?.year_id||null,groupId=numberOrNull(input.group_id)||projectEnrollment?.group_id||null
+    if(!yearId||!projectId)return json({detail:'无法识别学员所属年度和培训项目'},400)
+    if(String(phaseInfo.project_id)!==String(projectId)||String(phaseInfo.year_id)!==String(yearId))return json({detail:'所选阶段与学员所属年度或项目不一致'},400)
+    if(!projectEnrollment)return json({detail:'该学员未加入所选阶段对应的培训项目'},400)
+    let interactionNo=null
+    if(category==='课堂互动'){
+      const count=Number((await one("SELECT COUNT(*)::int AS count FROM points WHERE student_id=$1 AND project_id=$2 AND COALESCE(phase_id,0)=COALESCE($3,0) AND category='课堂互动' AND task_key=$4 AND status IN ('有效','active')",[studentId,projectId,phaseId,taskKey]))?.count||0)
+      if(count>=2)return json({detail:'该学员在同一场课堂互动中最多计2次积分'},400)
+      interactionNo=count+1
+    }else if(category!=='特殊调整'){
+      const duplicate=await one("SELECT id FROM points WHERE student_id=$1 AND project_id=$2 AND COALESCE(phase_id,0)=COALESCE($3,0) AND category=$4 AND task_key=$5 AND status IN ('有效','active') LIMIT 1",[studentId,projectId,phaseId,category,taskKey])
+      if(duplicate)return json({detail:'同一任务、同一学员只能计分一次'},409)
+    }
+    const record=await one(`INSERT INTO points(record_number,student_id,admin_id,year_id,project_id,phase_id,group_id,points,category,item_name,task_key,interaction_no,description,data_source,source_note,status,obtained_date)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,'有效',$16) RETURNING *`,[`PT${Date.now()}${randomBytes(3).toString('hex')}`,studentId,admin.id,yearId,projectId,phaseId,groupId,points,category,itemName,taskKey,interactionNo,input.description||null,input.data_source||'单个录入',input.source_note||null,input.obtained_date||new Date().toISOString()])
     if (record.phase_id) { await rows('INSERT INTO phase_participants(phase_id,student_id,group_id) VALUES($1,$2,$3) ON CONFLICT(phase_id,student_id) DO UPDATE SET group_id=COALESCE(EXCLUDED.group_id,phase_participants.group_id)',[record.phase_id,studentId,groupId]); if(groupId) await rows('INSERT INTO phase_groups(phase_id,group_id) VALUES($1,$2) ON CONFLICT DO NOTHING',[record.phase_id,groupId]) }
     return json(record,201)
   }
+  if(pathname==='/api/admin/team-points'&&request.method==='POST'){
+    const input=await body(request),groupId=numberOrNull(input.group_id),projectId=numberOrNull(input.project_id),phaseId=numberOrNull(input.phase_id),category=input.category||'';let points=Number(input.points)
+    if(!groupId||!projectId||!phaseId||!Number.isFinite(points)||points===0)return json({detail:'请选择小组、项目、阶段并填写有效团队积分'},400)
+    const group=await one('SELECT * FROM groups WHERE id=$1 AND project_id=$2',[groupId,projectId]);if(!group)return json({detail:'所选小组不属于该项目'},400)
+    if(phaseId&&!await one('SELECT id FROM phases WHERE id=$1 AND project_id=$2',[phaseId,projectId]))return json({detail:'所选阶段不属于该项目'},400)
+    const allowed=validPointValues(category,'团队');if(allowed&&(!allowed.length||!allowed.includes(points)))return json({detail:`“${category}”积分值不符合当前规则`},400)
+    const itemName=String(input.item_name||'').trim(),taskKey=taskKeyFor(input.task_key||itemName),remark=String(input.remark||'').trim()
+    if(!itemName)return json({detail:'请填写团队积分事项'},400)
+    if(category==='特殊调整'&&!remark)return json({detail:'团队特殊调整必须填写调整原因'},400)
+    if(category!=='特殊调整'&&await one("SELECT id FROM team_points WHERE group_id=$1 AND project_id=$2 AND COALESCE(phase_id,0)=COALESCE($3,0) AND category=$4 AND task_key=$5 AND status IN ('有效','active') LIMIT 1",[groupId,projectId,phaseId,category,taskKey]))return json({detail:'同一任务、同一小组只能计分一次'},409)
+    if(category==='阶段案例评优'&&await one("SELECT id FROM team_points WHERE project_id=$1 AND phase_id=$2 AND category='阶段案例评优' AND task_key=$3 AND status IN ('有效','active') LIMIT 1",[projectId,phaseId,taskKey]))return json({detail:'同一阶段的同一案例评优只能有一个第一名小组'},409)
+    if(['线上案例沟通','线上案例输出'].includes(category)){
+      const submitted=Number((await one("SELECT COUNT(*)::int AS count FROM team_points WHERE project_id=$1 AND COALESCE(phase_id,0)=COALESCE($2,0) AND category=$3 AND task_key=$4 AND status IN ('有效','active')",[projectId,phaseId,category,taskKey]))?.count||0)
+      points=submitted<2?20:submitted<4?15:10
+    }
+    const record=await one(`INSERT INTO team_points(record_number,group_id,admin_id,year_id,project_id,phase_id,points,category,item_name,task_key,data_source,source_note,remark,status,obtained_date)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'有效',$14) RETURNING *`,[`TP${Date.now()}${randomBytes(3).toString('hex')}`,groupId,admin.id,numberOrNull(input.year_id)||group.year_id,projectId,phaseId,points,category,itemName,taskKey,input.data_source||'单个录入',input.source_note||null,remark||null,input.obtained_date||new Date().toISOString()])
+    if(phaseId)await rows('INSERT INTO phase_groups(phase_id,group_id) VALUES($1,$2) ON CONFLICT DO NOTHING',[phaseId,groupId])
+    return json(record,201)
+  }
+  if(pathname==='/api/admin/team-points'&&request.method==='GET'){
+    const {page,pageSize,offset}=pageInfo(url);const projectId=numberOrNull(url.searchParams.get('project_id')),phaseId=numberOrNull(url.searchParams.get('phase_id')),groupId=numberOrNull(url.searchParams.get('group_id')),category=url.searchParams.get('category')||''
+    const args=[projectId,phaseId,groupId,category],where="($1::bigint IS NULL OR tp.project_id=$1) AND ($2::bigint IS NULL OR tp.phase_id=$2) AND ($3::bigint IS NULL OR tp.group_id=$3) AND ($4='' OR tp.category=$4)"
+    const total=Number((await one(`SELECT COUNT(*)::int AS total FROM team_points tp WHERE ${where}`,args)).total)
+    const items=await rows(`SELECT tp.*,g.name AS group_name,y.name AS year_name,p.name AS project_name,ph.name AS phase_name,u.real_name AS admin_name FROM team_points tp JOIN groups g ON g.id=tp.group_id LEFT JOIN academic_years y ON y.id=tp.year_id LEFT JOIN training_projects p ON p.id=tp.project_id LEFT JOIN phases ph ON ph.id=tp.phase_id LEFT JOIN users u ON u.id=tp.admin_id WHERE ${where} ORDER BY tp.id DESC LIMIT $5 OFFSET $6`,[...args,pageSize,offset])
+    return json({items,total,page,page_size:pageSize,total_pages:Math.max(1,Math.ceil(total/pageSize))})
+  }
+  const teamPointDelete=pathname.match(/^\/api\/admin\/team-points\/(\d+)$/);if(teamPointDelete&&request.method==='DELETE'){await rows('DELETE FROM team_points WHERE id=$1',[Number(teamPointDelete[1])]);return json({message:'团队积分已删除'})}
   if ((pathname === '/api/admin/points/batch'||pathname === '/api/admin/points/import')&&request.method==='POST') {
     const input=await body(request); const records=Array.isArray(input)?input:(input.records||[]); const result={created:0,errors:[]}
     for (const [index,record] of records.entries()) { try { const fake=new Request(request.url,{method:'POST',headers:request.headers,body:JSON.stringify(record)}); const response=await adminExtendedRoutes(fake,'/api/admin/points',url); if(response.status>=400) throw new Error((await response.json()).detail); result.created++ } catch(error){result.errors.push({row:index+1,detail:error.message})} }
@@ -616,24 +688,24 @@ async function adminExtendedRoutes(request, pathname, url) {
   }
   if (pathname === '/api/admin/points/records' && request.method === 'GET') {
     const {page,pageSize,offset}=pageInfo(url); const keyword=url.searchParams.get('keyword')||'',yearId=numberOrNull(url.searchParams.get('year_id')),projectId=numberOrNull(url.searchParams.get('project_id')),phaseId=numberOrNull(url.searchParams.get('phase_id')),category=url.searchParams.get('category')||''
-    const where=`($1='' OR u.real_name ILIKE $1 OR pt.record_number ILIKE $1 OR pt.description ILIKE $1) AND ($2::bigint IS NULL OR pt.year_id=$2) AND ($3::bigint IS NULL OR pt.project_id=$3) AND ($4::bigint IS NULL OR pt.phase_id=$4) AND ($5='' OR pt.category=$5)`; const args=[`%${keyword}%`,yearId,projectId,phaseId,category]
+    const where=`($1='' OR u.real_name ILIKE $1 OR pt.record_number ILIKE $1 OR pt.description ILIKE $1 OR pt.item_name ILIKE $1) AND ($2::bigint IS NULL OR pt.year_id=$2) AND ($3::bigint IS NULL OR pt.project_id=$3) AND ($4::bigint IS NULL OR pt.phase_id=$4) AND ($5='' OR pt.category=$5)`; const args=[`%${keyword}%`,yearId,projectId,phaseId,category]
     const total=Number((await one(`SELECT COUNT(*)::int AS total FROM points pt JOIN users u ON u.id=pt.student_id WHERE ${where}`,args)).total)
-    const items=await rows(`SELECT pt.*,u.real_name AS student_name,y.name AS year_name,p.name AS project_name,ph.name AS phase_name,g.name AS group_name
-      FROM points pt JOIN users u ON u.id=pt.student_id LEFT JOIN academic_years y ON y.id=pt.year_id LEFT JOIN training_projects p ON p.id=pt.project_id LEFT JOIN phases ph ON ph.id=pt.phase_id LEFT JOIN groups g ON g.id=pt.group_id WHERE ${where} ORDER BY pt.id DESC LIMIT $6 OFFSET $7`,[...args,pageSize,offset])
+    const items=await rows(`SELECT pt.*,u.real_name AS student_name,op.real_name AS admin_name,y.name AS year_name,p.name AS project_name,ph.name AS phase_name,g.name AS group_name
+      FROM points pt JOIN users u ON u.id=pt.student_id LEFT JOIN users op ON op.id=pt.admin_id LEFT JOIN academic_years y ON y.id=pt.year_id LEFT JOIN training_projects p ON p.id=pt.project_id LEFT JOIN phases ph ON ph.id=pt.phase_id LEFT JOIN groups g ON g.id=pt.group_id WHERE ${where} ORDER BY pt.id DESC LIMIT $6 OFFSET $7`,[...args,pageSize,offset])
     return json({items,total,page,page_size:pageSize,total_pages:Math.max(1,Math.ceil(total/pageSize))})
   }
   if (pathname === '/api/admin/points/records/export' && request.method === 'GET') {
-    const items=await rows(`SELECT pt.record_number,u.real_name,y.name AS year_name,p.name AS project_name,ph.name AS phase_name,pt.category,pt.points,pt.description,pt.data_source,pt.status,pt.created_at FROM points pt JOIN users u ON u.id=pt.student_id LEFT JOIN academic_years y ON y.id=pt.year_id LEFT JOIN training_projects p ON p.id=pt.project_id LEFT JOIN phases ph ON ph.id=pt.phase_id ORDER BY pt.id DESC`)
-    const headers=['流水号','学员','年度','项目名称','所属阶段','积分分类','积分','描述','来源','状态','时间']; const keys=['record_number','real_name','year_name','project_name','phase_name','category','points','description','data_source','status','created_at']; const csv='\uFEFF'+[headers.map(csvCell).join(','),...items.map(row=>keys.map(key=>csvCell(row[key])).join(','))].join('\n')
+    const items=await rows(`SELECT pt.record_number,u.real_name,y.name AS year_name,p.name AS project_name,ph.name AS phase_name,pt.category,pt.item_name,pt.points,pt.description,pt.data_source,pt.source_note,pt.status,pt.obtained_date,pt.created_at FROM points pt JOIN users u ON u.id=pt.student_id LEFT JOIN academic_years y ON y.id=pt.year_id LEFT JOIN training_projects p ON p.id=pt.project_id LEFT JOIN phases ph ON ph.id=pt.phase_id ORDER BY pt.id DESC`)
+    const headers=['流水号','计分对象','学员','年度','项目名称','所属阶段','积分分类','积分事项','积分','备注','来源','来源说明','状态','获得时间','创建时间']; const keys=['record_number','account_type','real_name','year_name','project_name','phase_name','category','item_name','points','description','data_source','source_note','status','obtained_date','created_at'];items.forEach(item=>item.account_type='个人'); const csv='\uFEFF'+[headers.map(csvCell).join(','),...items.map(row=>keys.map(key=>csvCell(row[key])).join(','))].join('\n')
     return new Response(csv,{headers:{'content-type':'text/csv; charset=utf-8','content-disposition':'attachment; filename="points_records.csv"'}})
   }
   if (pathname === '/api/admin/points/batch-delete' && request.method === 'POST') { const input=await body(request); const ids=(input.point_ids||[]).map(Number); await rows('DELETE FROM points WHERE id=ANY($1::bigint[])',[ids]); return json({message:`已删除 ${ids.length} 条积分`}) }
   const pointDelete=pathname.match(/^\/api\/admin\/points\/(\d+)$/); if(pointDelete&&request.method==='DELETE'){await rows('DELETE FROM points WHERE id=$1',[Number(pointDelete[1])]);return json({message:'积分已删除'})}
   if(pointDelete&&request.method==='PUT'){const input=await body(request);return json(await one(`UPDATE points SET points=COALESCE($1,points),category=COALESCE($2,category),description=$3,year_id=COALESCE($4,year_id),project_id=COALESCE($5,project_id),phase_id=$6,group_id=$7,obtained_date=COALESCE($8,obtained_date) WHERE id=$9 RETURNING *`,[numberOrNull(input.points),input.category||null,input.description||null,numberOrNull(input.year_id),numberOrNull(input.project_id),numberOrNull(input.phase_id),numberOrNull(input.group_id),input.obtained_date||null,Number(pointDelete[1])]))}
 
-  if (pathname === '/api/admin/point-rules' && request.method === 'GET') return json((await rows('SELECT * FROM point_rules ORDER BY id DESC')).map(r=>({...r,applicable_projects:r.applicable_projects?JSON.parse(r.applicable_projects):[],applicable_phases:r.applicable_phases?JSON.parse(r.applicable_phases):[]})))
-  if (pathname === '/api/admin/point-rules' && request.method === 'POST') { const i=await body(request); return json(await one(`INSERT INTO point_rules(category,rule_name,default_points,max_points,applicable_projects,applicable_phases,allow_repeat,count_in_period,count_in_available,need_approval,description) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,[i.category,i.rule_name,Number(i.default_points||0),numberOrNull(i.max_points),JSON.stringify(i.applicable_projects||[]),JSON.stringify(i.applicable_phases||[]),intFlag(i.allow_repeat),intFlag(i.count_in_period,1),intFlag(i.count_in_available,1),intFlag(i.need_approval),i.description||null]),201) }
-  const ruleMatch=pathname.match(/^\/api\/admin\/point-rules\/(\d+)$/); if(ruleMatch&&request.method==='PUT'){const i=await body(request);return json(await one(`UPDATE point_rules SET category=$1,rule_name=$2,default_points=$3,max_points=$4,applicable_projects=$5,applicable_phases=$6,allow_repeat=$7,count_in_period=$8,count_in_available=$9,need_approval=$10,description=$11 WHERE id=$12 RETURNING *`,[i.category,i.rule_name,Number(i.default_points||0),numberOrNull(i.max_points),JSON.stringify(i.applicable_projects||[]),JSON.stringify(i.applicable_phases||[]),intFlag(i.allow_repeat),intFlag(i.count_in_period,1),intFlag(i.count_in_available,1),intFlag(i.need_approval),i.description||null,Number(ruleMatch[1])]))}
+  if (pathname === '/api/admin/point-rules' && request.method === 'GET') return json((await rows('SELECT * FROM point_rules ORDER BY account_type,id DESC')).map(r=>({...r,applicable_projects:r.applicable_projects?JSON.parse(r.applicable_projects):[],applicable_phases:r.applicable_phases?JSON.parse(r.applicable_phases):[]})))
+  if (pathname === '/api/admin/point-rules' && request.method === 'POST') { const i=await body(request); return json(await one(`INSERT INTO point_rules(category,rule_name,default_points,max_points,applicable_projects,applicable_phases,allow_repeat,count_in_period,count_in_available,need_approval,description,account_type,scoring_standard) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,[i.category,i.rule_name,Number(i.default_points||0),numberOrNull(i.max_points),JSON.stringify(i.applicable_projects||[]),JSON.stringify(i.applicable_phases||[]),intFlag(i.allow_repeat),intFlag(i.count_in_period,1),intFlag(i.count_in_available,1),intFlag(i.need_approval),i.description||null,i.account_type||'个人',i.scoring_standard||null]),201) }
+  const ruleMatch=pathname.match(/^\/api\/admin\/point-rules\/(\d+)$/); if(ruleMatch&&request.method==='PUT'){const i=await body(request);return json(await one(`UPDATE point_rules SET category=$1,rule_name=$2,default_points=$3,max_points=$4,applicable_projects=$5,applicable_phases=$6,allow_repeat=$7,count_in_period=$8,count_in_available=$9,need_approval=$10,description=$11,account_type=$12,scoring_standard=$13 WHERE id=$14 RETURNING *`,[i.category,i.rule_name,Number(i.default_points||0),numberOrNull(i.max_points),JSON.stringify(i.applicable_projects||[]),JSON.stringify(i.applicable_phases||[]),intFlag(i.allow_repeat),intFlag(i.count_in_period,1),intFlag(i.count_in_available,1),intFlag(i.need_approval),i.description||null,i.account_type||'个人',i.scoring_standard||null,Number(ruleMatch[1])]))}
   if(pathname==='/api/admin/rule-text'&&request.method==='GET')return json(await rows('SELECT * FROM rule_texts ORDER BY id DESC'))
   if(pathname==='/api/admin/rule-text'&&request.method==='POST'){const i=await body(request);return json(await one('INSERT INTO rule_texts(title,content) VALUES($1,$2) RETURNING *',[i.title||'积分规则',i.content]),201)}
   const ruleTextMatch=pathname.match(/^\/api\/admin\/rule-text\/(\d+)$/);if(ruleTextMatch&&request.method==='DELETE'){await rows('DELETE FROM rule_texts WHERE id=$1',[Number(ruleTextMatch[1])]);return json({message:'规则文本已删除'})}
@@ -654,6 +726,7 @@ async function adminExtendedRoutes(request, pathname, url) {
       COUNT(DISTINCT pe.student_id)::int AS student_count,COUNT(DISTINCT g.id)::int AS group_count,
       COUNT(DISTINCT ph.id)::int AS phase_count,
       COALESCE((SELECT SUM(points) FROM points WHERE year_id=y.id AND points>0 AND status IN ('有效','active')),0)::int AS earned_points,
+      COALESCE((SELECT SUM(points) FROM team_points WHERE year_id=y.id AND status IN ('有效','active')),0)::int AS team_points,
       COALESCE((SELECT ABS(SUM(points)) FROM points WHERE year_id=y.id AND points<0 AND status IN ('有效','active')),0)::int AS deducted_points,
       (SELECT COUNT(*)::int FROM points WHERE year_id=y.id AND status IN ('有效','active')) AS point_records,
       (SELECT COUNT(*)::int FROM redemptions r JOIN project_enrollments re ON re.student_id=r.student_id WHERE re.year_id=y.id AND r.status NOT IN ('已拒绝','已取消')) AS redemption_count,
@@ -664,6 +737,7 @@ async function adminExtendedRoutes(request, pathname, url) {
       GROUP BY y.id,y.name ORDER BY y.name DESC`)
     for(const year of years){
       year.net_points=Number(year.earned_points)-Number(year.deducted_points)-Number(year.redeemed_points)
+      year.team_final_score=Number(year.earned_points)-Number(year.deducted_points)+Number(year.team_points)
       year.categories=await rows(`SELECT category,COUNT(*)::int AS records,COALESCE(SUM(points),0)::int AS points FROM points WHERE year_id=$1 AND status IN ('有效','active') GROUP BY category ORDER BY points DESC`,[year.year_id])
       year.projects=await rows(`SELECT p.id,p.name,
         (SELECT COUNT(DISTINCT student_id)::int FROM project_enrollments WHERE project_id=p.id) AS student_count,
@@ -671,6 +745,7 @@ async function adminExtendedRoutes(request, pathname, url) {
         (SELECT COUNT(*)::int FROM phases WHERE project_id=p.id) AS phase_count,
         (SELECT COUNT(*)::int FROM points WHERE project_id=p.id AND status IN ('有效','active')) AS point_records,
         COALESCE((SELECT SUM(points)::int FROM points WHERE project_id=p.id AND status IN ('有效','active')),0) AS earned_points
+        ,COALESCE((SELECT SUM(points)::int FROM team_points WHERE project_id=p.id AND status IN ('有效','active')),0) AS team_points
         FROM training_projects p WHERE p.year_id=$1 AND p.status IN ('archived','已归档') ORDER BY p.id`,[year.year_id])
     }
     return json({years,scope_note:'仅汇总已归档项目；项目归档后数据会自动进入年度汇总。'})
@@ -693,7 +768,11 @@ async function studentRoutes(request, pathname, url) {
     for(const phase of phasePoints){const rank=await one(`SELECT rank FROM (SELECT student_id,RANK() OVER(ORDER BY SUM(points) DESC)::int AS rank FROM points WHERE phase_id=$1 AND status IN ('有效','active') GROUP BY student_id) r WHERE student_id=$2`,[phase.phase_id,student.id]);phase.rank=rank?.rank||null}
     const currentRank=projectId?await one(`SELECT rank FROM (SELECT student_id,RANK() OVER(ORDER BY SUM(points) DESC)::int AS rank FROM points WHERE project_id=$1 AND status IN ('有效','active') GROUP BY student_id) r WHERE student_id=$2`,[projectId,student.id]):null
     const recentPoints=await rows('SELECT id,points,category,description,created_at FROM points WHERE student_id=$1 ORDER BY id DESC LIMIT 5',[student.id]);const recentRedemptions=await rows(`SELECT r.id,r.status,r.points_spent,r.created_at,p.name AS product_name,p.image_url FROM redemptions r JOIN products p ON p.id=r.product_id WHERE r.student_id=$1 ORDER BY r.id DESC LIMIT 5`,[student.id])
-    return json({real_name:student.real_name,year_name:enrollment?.year_name||'',project_name:enrollment?.project_name||'',group_name:enrollment?.group_name||'',period_points:periodPoints,period_rank:currentRank?.rank||null,total_points:balance.earned,available_points:balance.available,current_phase:currentPhase?.name||null,current_phase_points:currentPhase?phasePoints.find(p=>p.phase_id===currentPhase.id)?.points||0:0,current_phase_rank:currentPhase?phasePoints.find(p=>p.phase_id===currentPhase.id)?.rank||null:0,group_rank:null,phase_points:phasePoints,recent_points:recentPoints,recent_redemptions:recentRedemptions})
+    const groupId=enrollment?.group_id||null
+    const groupPersonal=groupId?Number((await one("SELECT COALESCE(SUM(pt.points),0)::int AS total FROM points pt JOIN group_members gm ON gm.student_id=pt.student_id WHERE gm.group_id=$1 AND pt.project_id=$2 AND pt.status IN ('有效','active')",[groupId,projectId]))?.total||0):0
+    const teamPoints=groupId?Number((await one("SELECT COALESCE(SUM(points),0)::int AS total FROM team_points WHERE group_id=$1 AND project_id=$2 AND status IN ('有效','active')",[groupId,projectId]))?.total||0):0
+    const groupScores=projectId?await rows(`SELECT g.id,COALESCE((SELECT SUM(pt.points) FROM points pt JOIN group_members gm ON gm.student_id=pt.student_id WHERE gm.group_id=g.id AND pt.project_id=$1 AND pt.status IN ('有效','active')),0)::int+COALESCE((SELECT SUM(tp.points) FROM team_points tp WHERE tp.group_id=g.id AND tp.project_id=$1 AND tp.status IN ('有效','active')),0)::int AS final_score FROM groups g WHERE g.project_id=$1 ORDER BY final_score DESC`,[projectId]):[]
+    return json({real_name:student.real_name,year_name:enrollment?.year_name||'',project_name:enrollment?.project_name||'',group_name:enrollment?.group_name||'',period_points:periodPoints,period_rank:currentRank?.rank||null,total_points:balance.earned,personal_cumulative_points:balance.earned,available_points:balance.available,team_points:teamPoints,team_member_points:groupPersonal,team_final_score:groupPersonal+teamPoints,current_phase:currentPhase?.name||null,current_phase_points:currentPhase?phasePoints.find(p=>String(p.phase_id)===String(currentPhase.id))?.points||0:0,current_phase_rank:currentPhase?phasePoints.find(p=>String(p.phase_id)===String(currentPhase.id))?.rank||null:0,group_rank:groupId?groupScores.findIndex(item=>String(item.id)===String(groupId))+1:null,phase_points:phasePoints,recent_points:recentPoints,recent_redemptions:recentRedemptions})
   }
   if(pathname==='/api/student/phase-overview'&&request.method==='GET'){
     const projectId=enrollment?.project_id||student.project_id||null;if(!projectId)return json({phases:[]})
@@ -702,7 +781,7 @@ async function studentRoutes(request, pathname, url) {
   const studentPhase=pathname.match(/^\/api\/student\/phases\/(\d+)$/);if(studentPhase&&request.method==='GET'){
     const phaseId=Number(studentPhase[1]),phase=await one(`SELECT ph.*,p.name AS project_name,y.name AS year_name FROM phases ph JOIN training_projects p ON p.id=ph.project_id JOIN academic_years y ON y.id=ph.year_id WHERE ph.id=$1`,[phaseId]);if(!phase)return json({detail:'阶段不存在'},404)
     const personal=await rows(`SELECT u.id AS student_id,u.real_name AS student_name,g.name AS group_name,COALESCE(SUM(pt.points) FILTER(WHERE pt.status IN ('有效','active')),0)::int AS total_points FROM project_enrollments pe JOIN users u ON u.id=pe.student_id LEFT JOIN groups g ON g.id=pe.group_id LEFT JOIN points pt ON pt.student_id=u.id AND pt.phase_id=$1 WHERE pe.project_id=$2 GROUP BY u.id,u.real_name,g.name ORDER BY total_points DESC`,[phaseId,phase.project_id]);personal.forEach((p,i)=>{p.rank=i+1;p.is_me=String(p.student_id)===String(student.id)})
-    const groups=await rows(`SELECT g.id AS group_id,g.name AS group_name,COUNT(DISTINCT gm.student_id)::int AS member_count,COALESCE(SUM(pt.points) FILTER(WHERE pt.status IN ('有效','active')),0)::int AS total_points FROM groups g LEFT JOIN group_members gm ON gm.group_id=g.id LEFT JOIN points pt ON pt.student_id=gm.student_id AND pt.phase_id=$1 WHERE g.project_id=$2 GROUP BY g.id,g.name`,[phaseId,phase.project_id]);groups.forEach(g=>g.avg_points=g.member_count?Math.round(g.total_points*100/g.member_count)/100:0);groups.sort((a,b)=>b.avg_points-a.avg_points).forEach((g,i)=>g.rank=i+1)
+    const groups=await rows(`SELECT g.id AS group_id,g.name AS group_name,(SELECT COUNT(*)::int FROM group_members gm WHERE gm.group_id=g.id) AS member_count,COALESCE((SELECT SUM(pt.points) FROM points pt JOIN group_members gm ON gm.student_id=pt.student_id WHERE gm.group_id=g.id AND pt.phase_id=$1 AND pt.status IN ('有效','active')),0)::int AS personal_points,COALESCE((SELECT SUM(tp.points) FROM team_points tp WHERE tp.group_id=g.id AND tp.phase_id=$1 AND tp.status IN ('有效','active')),0)::int AS team_points FROM groups g WHERE g.project_id=$2`,[phaseId,phase.project_id]);groups.forEach(g=>{g.total_points=Number(g.personal_points)+Number(g.team_points);g.final_score=g.total_points;g.avg_points=g.member_count?Math.round(g.total_points*100/g.member_count)/100:0});groups.sort((a,b)=>b.final_score-a.final_score).forEach((g,i)=>g.rank=i+1)
     groups.forEach(group=>group.is_my_group=String(group.group_id)===String(enrollment?.group_id))
     const categoryDetails=await rows("SELECT category,COALESCE(SUM(points),0)::int AS points FROM points WHERE phase_id=$1 AND student_id=$2 AND status IN ('有效','active') GROUP BY category ORDER BY category",[phaseId,student.id])
     return json({...phase,category_details:categoryDetails,personal_rankings:personal,rankings:personal,group_rankings:groups,my_ranking:personal.find(p=>String(p.student_id)===String(student.id))||null,my_group_ranking:groups.find(g=>String(g.group_id)===String(enrollment?.group_id))||null})
@@ -736,11 +815,11 @@ async function studentRoutes(request, pathname, url) {
       FROM group_members gm JOIN users u ON u.id=gm.student_id LEFT JOIN points pt ON pt.student_id=u.id AND pt.project_id=$1
       WHERE gm.group_id=$2 GROUP BY u.id,u.real_name,u.level1_dept ORDER BY period_points DESC`,[enrollment.project_id,enrollment.group_id])
     members.forEach((member,index)=>member.rank=index+1)
-    const total=members.reduce((sum,member)=>sum+Number(member.period_points),0)
-    const groupRanks=await rows(`SELECT g.id,COALESCE(SUM(pt.points) FILTER(WHERE pt.status IN ('有效','active')),0)::int AS total
-      FROM groups g LEFT JOIN group_members gm ON gm.group_id=g.id LEFT JOIN points pt ON pt.student_id=gm.student_id AND pt.project_id=$1
-      WHERE g.project_id=$1 GROUP BY g.id ORDER BY total DESC`,[enrollment.project_id])
-    return json({group:{...group,member_count:members.length,total_points:total,avg_points:members.length?Math.round(total*100/members.length)/100:0,rank:groupRanks.findIndex(item=>item.id===group.id)+1},members})
+    const personalTotal=members.reduce((sum,member)=>sum+Number(member.period_points),0)
+    const teamPoints=Number((await one("SELECT COALESCE(SUM(points),0)::int AS total FROM team_points WHERE group_id=$1 AND project_id=$2 AND status IN ('有效','active')",[group.id,enrollment.project_id]))?.total||0)
+    const groupRanks=await rows(`SELECT g.id,COALESCE((SELECT SUM(pt.points) FROM points pt JOIN group_members gm ON gm.student_id=pt.student_id WHERE gm.group_id=g.id AND pt.project_id=$1 AND pt.status IN ('有效','active')),0)::int AS personal_points,COALESCE((SELECT SUM(tp.points) FROM team_points tp WHERE tp.group_id=g.id AND tp.project_id=$1 AND tp.status IN ('有效','active')),0)::int AS team_points FROM groups g WHERE g.project_id=$1`,[enrollment.project_id]);groupRanks.forEach(item=>item.final_score=Number(item.personal_points)+Number(item.team_points));groupRanks.sort((a,b)=>b.final_score-a.final_score)
+    const recentTeamPoints=await rows(`SELECT tp.id,tp.category,tp.item_name,tp.points,tp.obtained_date,ph.name AS phase_name FROM team_points tp LEFT JOIN phases ph ON ph.id=tp.phase_id WHERE tp.group_id=$1 AND tp.project_id=$2 AND tp.status IN ('有效','active') ORDER BY tp.obtained_date DESC,tp.id DESC LIMIT 20`,[group.id,enrollment.project_id])
+    return json({group:{...group,member_count:members.length,personal_points:personalTotal,team_points:teamPoints,total_points:personalTotal+teamPoints,final_score:personalTotal+teamPoints,avg_points:members.length?Math.round((personalTotal+teamPoints)*100/members.length)/100:0,rank:groupRanks.findIndex(item=>String(item.id)===String(group.id))+1},members,team_point_records:recentTeamPoints})
   }
   const teamPhase=pathname.match(/^\/api\/student\/team\/phases\/(\d+)$/)
   if(teamPhase&&request.method==='GET'){

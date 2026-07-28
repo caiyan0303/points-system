@@ -135,11 +135,11 @@ export default function AdminGroups() {
                   <p className="text-2xl font-bold text-gray-900">{groupDetail.member_count || 0}</p>
                 </div>
                 <div className="bg-white rounded-xl border border-gray-200 p-4 text-center">
-                  <p className="text-sm text-gray-500">小组总积分</p>
+                  <p className="text-sm text-gray-500">团队最终得分</p>
                   <p className="text-2xl font-bold text-indigo-600">{groupDetail.total_points || 0}</p>
                 </div>
                 <div className="bg-white rounded-xl border border-gray-200 p-4 text-center">
-                  <p className="text-sm text-gray-500">平均积分</p>
+                  <p className="text-sm text-gray-500">人均最终得分</p>
                   <p className="text-2xl font-bold text-green-600">{groupDetail.avg_points || 0}</p>
                 </div>
                 <div className="bg-white rounded-xl border border-gray-200 p-4 text-center">
@@ -297,8 +297,9 @@ export default function AdminGroups() {
                     </div>
                     <div className="space-y-2 text-sm">
                       <div className="flex justify-between"><span className="text-gray-500">成员</span><span className="font-medium">{g.member_count || 0} 人</span></div>
-                      <div className="flex justify-between"><span className="text-gray-500">总积分</span><span className="font-medium text-indigo-600">{g.total_points || 0}</span></div>
-                      <div className="flex justify-between"><span className="text-gray-500">平均积分</span><span className="font-medium text-green-600">{g.avg_points || 0}</span></div>
+                      <div className="flex justify-between"><span className="text-gray-500">成员个人积分</span><span className="font-medium text-indigo-600">{g.personal_points || 0}</span></div>
+                      <div className="flex justify-between"><span className="text-gray-500">团队积分</span><span className="font-medium text-orange-600">{g.team_points || 0}</span></div>
+                      <div className="flex justify-between"><span className="text-gray-500">团队最终得分</span><span className="font-medium text-green-600">{g.final_score || g.total_points || 0}</span></div>
                       <div className="flex justify-between"><span className="text-gray-500">排名</span><span className="font-medium">{g.rank ? `第 ${g.rank} 名` : '-'}</span></div>
                     </div>
                     <div className="mt-3 pt-3 border-t border-gray-100 flex items-center gap-4 text-xs text-gray-400">
