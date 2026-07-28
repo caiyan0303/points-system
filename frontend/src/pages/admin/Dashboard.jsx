@@ -165,6 +165,7 @@ export default function AdminDashboard() {
                   </div>
                   <div className="flex items-center gap-4 text-xs text-gray-500">
                     <span>{p.participant_count || 0} 人</span>
+                    <span>{p.group_count || 0} 个小组</span>
                     <span>{p.total_points || 0} 积分</span>
                     <span className={`px-2 py-0.5 rounded-full text-xs ${
                       p.status === '进行中' ? 'bg-green-50 text-green-600' :

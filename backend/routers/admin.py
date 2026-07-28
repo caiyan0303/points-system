@@ -201,8 +201,8 @@ def dashboard(
         p_count = db.query(func.count(func.distinct(PhaseParticipant.student_id))).filter(
             PhaseParticipant.phase_id == p.id,
         ).scalar() or 0
-        g_count = db.query(func.count(PhaseGroup.id)).filter(
-            PhaseGroup.phase_id == p.id,
+        g_count = db.query(func.count(Group.id)).filter(
+            Group.project_id == p.project_id,
         ).scalar() or 0
         p_pts = db.query(func.coalesce(func.sum(Point.points), 0)).filter(
             Point.phase_id == p.id,

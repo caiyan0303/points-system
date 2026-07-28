@@ -221,7 +221,7 @@ async function adminCoreRoutes(request, pathname, url) {
     const lowStockProducts = Number((await one("SELECT COUNT(*)::int AS count FROM products WHERE product_status IN ('即将售罄','low_stock')")).count)
     const phaseOverview = await rows(`SELECT ph.id,ph.name,ph.status,ph.start_date,ph.end_date,
       (SELECT COUNT(DISTINCT student_id)::int FROM phase_participants pp WHERE pp.phase_id=ph.id) AS participant_count,
-      (SELECT COUNT(*)::int FROM phase_groups pg WHERE pg.phase_id=ph.id) AS group_count,
+      (SELECT COUNT(*)::int FROM groups g WHERE g.project_id=ph.project_id) AS group_count,
       COALESCE((SELECT SUM(points)::int FROM points pt WHERE pt.phase_id=ph.id AND pt.status IN ('有效','active')),0) AS total_points
       FROM phases ph ORDER BY ph.id DESC`)
     return json({
