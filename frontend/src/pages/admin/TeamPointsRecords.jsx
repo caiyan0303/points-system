@@ -3,6 +3,7 @@ import { RefreshCw, Trash2, UsersRound } from 'lucide-react'
 import api from '../../api'
 import AppLayout from '../../components/AppLayout'
 import Toast from '../../components/Toast'
+import PointsPageTabs from '../../components/PointsPageTabs'
 
 export default function AdminTeamPointsRecords() {
   const [records, setRecords] = useState([])
@@ -39,13 +40,14 @@ export default function AdminTeamPointsRecords() {
     <Toast message={toast?.msg} type={toast?.type} onClose={() => setToast(null)} />
     <div className="flex items-center justify-between mb-6">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">团队积分流水</h1>
-        <p className="text-gray-500 mt-1">每笔团队积分都会联动阶段小组排名和团队最终得分</p>
+        <h1 className="text-2xl font-bold text-gray-900">团队积分</h1>
+        <p className="text-gray-500 mt-1">录入团队积分或查看团队积分流水</p>
       </div>
       <button onClick={loadRecords} disabled={loading} className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg border border-gray-300 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50">
         <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> 刷新流水
       </button>
     </div>
+    <PointsPageTabs type="team" />
     <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
       <div className="px-5 py-4 border-b flex items-center gap-2"><UsersRound className="w-5 h-5 text-indigo-600" /><h2 className="font-semibold">团队积分记录</h2></div>
       {loading ? <div className="py-16 text-center text-sm text-gray-400">正在加载团队积分流水…</div> : <div className="overflow-x-auto">

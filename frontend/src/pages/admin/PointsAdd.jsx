@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import api from '../../api'
 import AppLayout from '../../components/AppLayout'
 import Toast from '../../components/Toast'
+import PointsPageTabs from '../../components/PointsPageTabs'
 import { Plus, Upload, X, Trash2, Download, MessageCircle, Send, CheckCircle2 } from 'lucide-react'
 import * as XLSX from 'xlsx'
 
@@ -476,9 +477,10 @@ export default function AdminPointsAdd() {
     <AppLayout>
       <Toast message={toast?.msg} type={toast?.type} onClose={() => setToast(null)} />
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">个人积分录入</h1>
-        <p className="text-gray-500 mt-1">为学员录入积分</p>
+        <h1 className="text-2xl font-bold text-gray-900">个人积分</h1>
+        <p className="text-gray-500 mt-1">录入个人积分或查看积分流水</p>
       </div>
+      <PointsPageTabs type="personal" />
 
       {/* Tabs */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden mb-6">

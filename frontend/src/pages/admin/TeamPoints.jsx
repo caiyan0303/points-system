@@ -4,6 +4,7 @@ import * as XLSX from 'xlsx'
 import api from '../../api'
 import AppLayout from '../../components/AppLayout'
 import Toast from '../../components/Toast'
+import PointsPageTabs from '../../components/PointsPageTabs'
 
 const CATEGORIES = ['线上案例沟通', '线上案例输出', '阶段案例评优', '沙盘共创', '特殊调整']
 const POINT_OPTIONS = {
@@ -145,9 +146,10 @@ export default function AdminTeamPoints() {
   return <AppLayout>
     <Toast message={toast?.msg} type={toast?.type} onClose={() => setToast(null)} />
     <div className="mb-6">
-      <h1 className="text-2xl font-bold text-gray-900">团队积分录入</h1>
-      <p className="text-gray-500 mt-1">团队积分只进入小组账户；团队最终得分＝成员个人积分合计＋团队积分</p>
+      <h1 className="text-2xl font-bold text-gray-900">团队积分</h1>
+      <p className="text-gray-500 mt-1">录入团队积分或查看团队积分流水</p>
     </div>
+    <PointsPageTabs type="team" />
     <div className="bg-white rounded-xl border border-gray-200 p-6 mb-6">
       <div className="flex items-center justify-between gap-4 mb-5">
         <div className="flex items-center gap-2"><UsersRound className="w-5 h-5 text-indigo-600" /><h2 className="font-semibold">录入团队积分</h2></div>

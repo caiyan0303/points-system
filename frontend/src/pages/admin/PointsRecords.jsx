@@ -3,6 +3,7 @@ import api from '../../api'
 import AppLayout from '../../components/AppLayout'
 import Pagination from '../../components/Pagination'
 import Toast from '../../components/Toast'
+import PointsPageTabs from '../../components/PointsPageTabs'
 import { Search, RefreshCw, Download, Eye, X, Trash2 } from 'lucide-react'
 
 const CATEGORIES = [
@@ -112,8 +113,8 @@ export default function AdminPointsRecords() {
       <Toast message={toast?.msg} type={toast?.type} onClose={() => setToast(null)} />
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">个人积分流水</h1>
-          <p className="text-gray-500 mt-1">查看个人积分变动；团队积分请在“团队积分”中查看</p>
+          <h1 className="text-2xl font-bold text-gray-900">个人积分</h1>
+          <p className="text-gray-500 mt-1">录入个人积分或查看积分流水</p>
         </div>
         <div className="flex items-center gap-2">
           {selectedIds.length > 0 && (
@@ -126,6 +127,7 @@ export default function AdminPointsRecords() {
           </button>
         </div>
       </div>
+      <PointsPageTabs type="personal" />
 
       {/* Filters */}
       <div className="bg-white rounded-xl border border-gray-200 p-4 mb-6">

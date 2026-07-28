@@ -4,7 +4,7 @@ import { useAuth } from '../contexts/AuthContext'
 import {
   LayoutDashboard, Gift, History, LogOut, User, ChevronRight,
   Shield, Users, ShoppingBag, ClipboardCheck, TrendingUp, PlusCircle,
-  ListChecks, Layers, ScrollText, UsersRound,
+  Layers, ScrollText, UsersRound,
   Calendar, FileText, Archive, ChevronDown, Package, Star
 } from 'lucide-react'
 
@@ -26,13 +26,8 @@ const adminGroups = [
   {
     key: 'points', label: '积分管理', icon: TrendingUp,
     items: [
-      { section: true, label: '个人积分' },
-      { path: '/admin/points', icon: PlusCircle, label: '录入', exact: true, nested: true },
-      { path: '/admin/points/records', icon: ListChecks, label: '流水', exact: true, nested: true },
-      { section: true, label: '团队积分' },
-      { path: '/admin/team-points/add', icon: PlusCircle, label: '录入', exact: true, nested: true },
-      { path: '/admin/team-points/records', icon: ListChecks, label: '流水', exact: true, nested: true },
-      { section: true, label: '规则设置' },
+      { path: '/admin/points', icon: PlusCircle, label: '个人积分' },
+      { path: '/admin/team-points', icon: UsersRound, label: '团队积分' },
       { path: '/admin/point-rules', icon: ScrollText, label: '积分规则' },
     ]
   },
@@ -115,18 +110,13 @@ function SidebarGroup({ group, location }) {
       {open && (
         <div className="space-y-0.5 mt-0.5 mb-2">
           {group.items.map(item => {
-            if (item.section) return (
-              <div key={`section-${item.label}`} className="pl-7 pr-3 pt-2 pb-1 text-[11px] font-semibold tracking-wide text-gray-400">
-                {item.label}
-              </div>
-            )
             const Icon = item.icon
             const active = location.pathname === item.path || (!item.exact && location.pathname.startsWith(item.path + '/'))
             return (
               <Link
                 key={item.path}
                 to={item.path}
-                className={`flex items-center gap-3 ${item.nested ? 'pl-10' : 'pl-7'} pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                className={`flex items-center gap-3 pl-7 pr-3 py-2 rounded-lg text-sm font-medium transition-colors ${
                   active
                     ? 'bg-indigo-50 text-indigo-700'
                     : 'text-gray-500 hover:bg-gray-50 hover:text-gray-800'

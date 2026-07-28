@@ -70,8 +70,7 @@ function AppRoutes() {
       <Route path="/admin/phases" element={<ProtectedRoute role="admin"><AdminPhases /></ProtectedRoute>} />
       <Route path="/admin/points" element={<ProtectedRoute role="admin"><AdminPointsAdd /></ProtectedRoute>} />
       <Route path="/admin/points/records" element={<ProtectedRoute role="admin"><AdminPointsRecords /></ProtectedRoute>} />
-      <Route path="/admin/team-points" element={<Navigate to="/admin/team-points/add" replace />} />
-      <Route path="/admin/team-points/add" element={<ProtectedRoute role="admin"><AdminTeamPoints /></ProtectedRoute>} />
+      <Route path="/admin/team-points" element={<ProtectedRoute role="admin"><AdminTeamPoints /></ProtectedRoute>} />
       <Route path="/admin/team-points/records" element={<ProtectedRoute role="admin"><AdminTeamPointsRecords /></ProtectedRoute>} />
       <Route path="/admin/point-rules" element={<ProtectedRoute role="admin"><AdminPointRules /></ProtectedRoute>} />
       <Route path="/admin/products" element={<ProtectedRoute role="admin"><AdminProducts /></ProtectedRoute>} />
