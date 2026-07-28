@@ -71,6 +71,25 @@ const phaseStatusFor = (phase) => {
   return '已关闭'
 }
 
+const syncProjectPhaseAssociations = async (projectId) => {
+  if (!projectId) return
+  await rows(`INSERT INTO phase_groups(phase_id,group_id)
+    SELECT ph.id,g.id FROM phases ph JOIN groups g ON g.project_id=ph.project_id
+    WHERE ph.project_id=$1 AND NOT EXISTS (
+      SELECT 1 FROM phase_groups pg WHERE pg.phase_id=ph.id AND pg.group_id=g.id
+    )`, [projectId])
+  await rows(`INSERT INTO phase_participants(phase_id,student_id,group_id)
+    SELECT ph.id,pe.student_id,pe.group_id FROM phases ph
+    JOIN project_enrollments pe ON pe.project_id=ph.project_id
+    WHERE ph.project_id=$1 AND NOT EXISTS (
+      SELECT 1 FROM phase_participants pp WHERE pp.phase_id=ph.id AND pp.student_id=pe.student_id
+    )`, [projectId])
+  await rows(`UPDATE phase_participants pp SET group_id=pe.group_id
+    FROM phases ph,project_enrollments pe
+    WHERE pp.phase_id=ph.id AND pe.project_id=ph.project_id AND pe.student_id=pp.student_id
+      AND ph.project_id=$1 AND pp.group_id IS DISTINCT FROM pe.group_id`, [projectId])
+}
+
 const phaseSummary = async (phase) => {
   const status = phaseStatusFor(phase)
   if (status !== phase.status) {
@@ -241,6 +260,9 @@ async function adminCoreRoutes(request, pathname, url) {
       LEFT JOIN training_projects p ON p.id=ph.project_id
       WHERE ($1::bigint IS NULL OR ph.year_id=$1) AND ($2::bigint IS NULL OR ph.project_id=$2)
       ORDER BY ph.id DESC`, [yearId, projectId])
+    for (const id of [...new Set(phases.map(phase=>Number(phase.project_id)).filter(Boolean))]) {
+      await syncProjectPhaseAssociations(id)
+    }
     return json(await Promise.all(phases.map(phaseSummary)))
   }
   if (pathname === '/api/admin/phases' && request.method === 'POST') {
@@ -268,6 +290,7 @@ async function adminCoreRoutes(request, pathname, url) {
       name,yearId,projectId,startDate,endDate,input.description||null,intFlag(input.allow_ranking,1),
       intFlag(input.allow_excellent),Number(input.excellent_count||0),input.prize_description||null,
     ])
+    await syncProjectPhaseAssociations(projectId)
     return json(await phaseSummary({...created,year_name:(await one('SELECT name FROM academic_years WHERE id=$1',[yearId]))?.name||'',project_name:project.name}),201)
   }
   const phaseMatch = pathname.match(/^\/api\/admin\/phases\/(\d+)(?:\/(archive|close|excellent))?$/)
@@ -278,6 +301,7 @@ async function adminCoreRoutes(request, pathname, url) {
       LEFT JOIN academic_years y ON y.id=ph.year_id LEFT JOIN training_projects p ON p.id=ph.project_id WHERE ph.id=$1`,[phaseId])
     if (!phase) return json({detail:'阶段不存在'},404)
     if (!action && request.method === 'GET') {
+      await syncProjectPhaseAssociations(phase.project_id)
       const summary = await phaseSummary(phase)
       const participants = await rows(`SELECT u.id AS student_id,u.real_name AS student_name,u.department,g.name AS group_name,
         pp.is_excellent,pp.prize_given,COALESCE(SUM(pt.points) FILTER (WHERE pt.status IN ('有效','active')),0)::int AS total_points
@@ -381,6 +405,7 @@ async function adminCoreRoutes(request, pathname, url) {
       [name,passwordHash,input.email||null,input.phone||null,input.address||null,input.department||null,input.system||null,input.level1_dept||null,input.position||null,yearId,projectId,input.employment_status||'在职'])
     if (yearId && projectId) await rows('INSERT INTO project_enrollments(student_id,year_id,project_id,group_id,label) VALUES($1,$2,$3,$4,$5)', [user.id,yearId,projectId,groupId,'首次参加'])
     if (groupId) await rows('INSERT INTO group_members(group_id,student_id) VALUES($1,$2)',[groupId,user.id])
+    if (projectId) await syncProjectPhaseAssociations(projectId)
     return json({ message:`学员 ${name} 创建成功`, ...user }, 201)
   }
   const studentMatch = pathname.match(/^\/api\/admin\/students\/(\d+)$/)
@@ -415,6 +440,7 @@ async function adminCoreRoutes(request, pathname, url) {
       if (groupId) await rows('INSERT INTO group_members(group_id,student_id) VALUES($1,$2) ON CONFLICT(group_id,student_id) DO NOTHING',[groupId,studentId])
       await rows('UPDATE project_enrollments SET group_id=$1 WHERE student_id=$2 AND project_id=$3',[groupId,studentId,projectId])
     }
+    if (projectId) await syncProjectPhaseAssociations(projectId)
     return json({message:'学员信息已更新',...updated})
   }
   const groupMatch = pathname.match(/^\/api\/admin\/groups\/(\d+)$/)
@@ -549,6 +575,7 @@ async function adminExtendedRoutes(request, pathname, url) {
   }
   if (pathname === '/api/admin/students/batch' && request.method === 'POST') {
     const input=await body(request); const source=Array.isArray(input)?input:(input.rows||[]); const result={created:0,skipped:0,errors:[]}
+    const touchedProjectIds = new Set()
     for (const [index,item] of source.entries()) {
       try {
         const name=String(item.real_name||item.name||item['姓名']||'').trim(); if (!name) throw new Error('姓名为空')
@@ -569,9 +596,11 @@ async function adminExtendedRoutes(request, pathname, url) {
         if (yearId&&projectId) await rows(`INSERT INTO project_enrollments(student_id,year_id,project_id,group_id,label) VALUES($1,$2,$3,$4,'首次参加')
           ON CONFLICT(student_id,project_id) DO UPDATE SET group_id=EXCLUDED.group_id`,[studentId,yearId,projectId,groupId])
         if (groupId) await rows('INSERT INTO group_members(group_id,student_id) VALUES($1,$2) ON CONFLICT DO NOTHING',[groupId,studentId])
+        if (projectId) touchedProjectIds.add(Number(projectId))
         result.created++
       } catch(error) { result.errors.push({row:index+2,detail:error.message}) }
     }
+    for (const id of touchedProjectIds) await syncProjectPhaseAssociations(id)
     return json(result)
   }
 
@@ -579,9 +608,9 @@ async function adminExtendedRoutes(request, pathname, url) {
   if(projectMemberRoute){
     const projectId=Number(projectMemberRoute[1]),studentId=numberOrNull(projectMemberRoute[2]),project=await one('SELECT * FROM training_projects WHERE id=$1',[projectId]);if(!project)return json({detail:'项目不存在'},404)
     if(!studentId&&request.method==='GET')return json(await rows(`SELECT u.id,u.real_name,u.system,u.level1_dept,pe.group_id,g.name AS group_name,pe.status,pe.label FROM project_enrollments pe JOIN users u ON u.id=pe.student_id LEFT JOIN groups g ON g.id=pe.group_id WHERE pe.project_id=$1 ORDER BY u.id`,[projectId]))
-    if(!studentId&&request.method==='POST'){const input=await body(request);const ids=(Array.isArray(input)?input:input.student_ids||[]).map(Number);for(const id of ids)await rows(`INSERT INTO project_enrollments(student_id,year_id,project_id,status,label) VALUES($1,$2,$3,'在读','后续参加') ON CONFLICT(student_id,project_id) DO NOTHING`,[id,project.year_id,projectId]);return json({message:'项目成员已添加'})}
-    if(studentId&&request.method==='PUT'){const input=await body(request);await rows('UPDATE project_enrollments SET group_id=$1,status=COALESCE($2,status),label=COALESCE($3,label),remark=$4 WHERE project_id=$5 AND student_id=$6',[numberOrNull(input.group_id),input.status||null,input.label||null,input.remark||null,projectId,studentId]);return json({message:'项目成员已更新'})}
-    if(studentId&&request.method==='DELETE'){await rows('DELETE FROM project_enrollments WHERE project_id=$1 AND student_id=$2',[projectId,studentId]);await rows('DELETE FROM group_members WHERE student_id=$1 AND group_id IN(SELECT id FROM groups WHERE project_id=$2)',[studentId,projectId]);return json({message:'项目成员已移除'})}
+    if(!studentId&&request.method==='POST'){const input=await body(request);const ids=(Array.isArray(input)?input:input.student_ids||[]).map(Number);for(const id of ids)await rows(`INSERT INTO project_enrollments(student_id,year_id,project_id,status,label) VALUES($1,$2,$3,'在读','后续参加') ON CONFLICT(student_id,project_id) DO NOTHING`,[id,project.year_id,projectId]);await syncProjectPhaseAssociations(projectId);return json({message:'项目成员已添加'})}
+    if(studentId&&request.method==='PUT'){const input=await body(request);await rows('UPDATE project_enrollments SET group_id=$1,status=COALESCE($2,status),label=COALESCE($3,label),remark=$4 WHERE project_id=$5 AND student_id=$6',[numberOrNull(input.group_id),input.status||null,input.label||null,input.remark||null,projectId,studentId]);await syncProjectPhaseAssociations(projectId);return json({message:'项目成员已更新'})}
+    if(studentId&&request.method==='DELETE'){await rows('DELETE FROM phase_participants WHERE student_id=$1 AND phase_id IN(SELECT id FROM phases WHERE project_id=$2)',[studentId,projectId]);await rows('DELETE FROM project_enrollments WHERE project_id=$1 AND student_id=$2',[projectId,studentId]);await rows('DELETE FROM group_members WHERE student_id=$1 AND group_id IN(SELECT id FROM groups WHERE project_id=$2)',[studentId,projectId]);return json({message:'项目成员已移除'})}
   }
 
   if (pathname === '/api/admin/groups' && request.method === 'GET') {
@@ -600,6 +629,7 @@ async function adminExtendedRoutes(request, pathname, url) {
     const input=await body(request); const name=String(input.name||'').trim(),yearId=numberOrNull(input.year_id),projectId=numberOrNull(input.project_id)
     if (!name||!yearId||!projectId) return json({detail:'请填写小组名称、年度和项目'},400)
     const created=await one("INSERT INTO groups(name,year_id,project_id,status) VALUES($1,$2,$3,'active') ON CONFLICT(project_id,name) DO UPDATE SET year_id=EXCLUDED.year_id RETURNING *",[name,yearId,projectId])
+    await syncProjectPhaseAssociations(projectId)
     return json(created,201)
   }
   const groupRoute=pathname.match(/^\/api\/admin\/groups\/(\d+)(?:\/members(?:\/(\d+))?)?$/)
@@ -617,9 +647,10 @@ async function adminExtendedRoutes(request, pathname, url) {
     if (pathname.endsWith('/members')&&request.method==='POST') {
       const input=await body(request); const ids=(Array.isArray(input)?input:input.student_ids||[]).map(Number)
       for (const id of ids) { await rows('DELETE FROM group_members WHERE student_id=$1 AND group_id IN (SELECT id FROM groups WHERE project_id=$2)',[id,group.project_id]); await rows('INSERT INTO group_members(group_id,student_id) VALUES($1,$2) ON CONFLICT DO NOTHING',[groupId,id]); await rows('UPDATE project_enrollments SET group_id=$1 WHERE student_id=$2 AND project_id=$3',[groupId,id,group.project_id]) }
+      await syncProjectPhaseAssociations(group.project_id)
       return json({message:'成员已添加'})
     }
-    if (memberId&&request.method==='DELETE') { await rows('DELETE FROM group_members WHERE group_id=$1 AND student_id=$2',[groupId,memberId]); await rows('UPDATE project_enrollments SET group_id=NULL WHERE project_id=$1 AND student_id=$2',[group.project_id,memberId]); return json({message:'成员已移除'}) }
+    if (memberId&&request.method==='DELETE') { await rows('DELETE FROM group_members WHERE group_id=$1 AND student_id=$2',[groupId,memberId]); await rows('UPDATE project_enrollments SET group_id=NULL WHERE project_id=$1 AND student_id=$2',[group.project_id,memberId]); await syncProjectPhaseAssociations(group.project_id); return json({message:'成员已移除'}) }
   }
 
   const phaseRankingRoute=pathname.match(/^\/api\/admin\/phases\/(\d+)\/(ranking|group-ranking)$/)

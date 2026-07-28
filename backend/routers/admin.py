@@ -138,6 +138,55 @@ def _ensure_not_none(val):
     return val if val is not None else 0
 
 
+def _sync_project_phase_associations(db: Session, project_id: Optional[int]) -> bool:
+    """让项目下的全部阶段始终继承项目成员及小组。"""
+    if not project_id:
+        return False
+    phases = db.query(Phase).filter(Phase.project_id == project_id).all()
+    if not phases:
+        return False
+    groups = db.query(Group).filter(Group.project_id == project_id).all()
+    enrollments = db.query(ProjectEnrollment).filter(
+        ProjectEnrollment.project_id == project_id,
+    ).all()
+    phase_ids = [phase.id for phase in phases]
+    existing_group_pairs = {
+        (item.phase_id, item.group_id)
+        for item in db.query(PhaseGroup).filter(PhaseGroup.phase_id.in_(phase_ids)).all()
+    }
+    participants = {
+        (item.phase_id, item.student_id): item
+        for item in db.query(PhaseParticipant).filter(PhaseParticipant.phase_id.in_(phase_ids)).all()
+    }
+    changed = False
+    for phase in phases:
+        for group in groups:
+            key = (phase.id, group.id)
+            if key not in existing_group_pairs:
+                db.add(PhaseGroup(phase_id=phase.id, group_id=group.id))
+                existing_group_pairs.add(key)
+                changed = True
+        for enrollment in enrollments:
+            key = (phase.id, enrollment.student_id)
+            participant = participants.get(key)
+            if participant:
+                if participant.group_id != enrollment.group_id:
+                    participant.group_id = enrollment.group_id
+                    changed = True
+            else:
+                participant = PhaseParticipant(
+                    phase_id=phase.id,
+                    student_id=enrollment.student_id,
+                    group_id=enrollment.group_id,
+                )
+                db.add(participant)
+                participants[key] = participant
+                changed = True
+    if changed:
+        db.flush()
+    return changed
+
+
 # ═══════════════ Dashboard ═══════════════
 
 @router.get("/dashboard", response_model=AdminDashboardStats)
@@ -985,6 +1034,7 @@ def batch_import_students(
     updated = 0
     skipped = 0
     created_groups = {}
+    touched_project_ids = set()
     for i, row in enumerate(rows):
         real_name = row.get("real_name")
         if not real_name:
@@ -993,6 +1043,8 @@ def batch_import_students(
 
         year_id = row.get("_year_id")
         project_id = row.get("_project_id")
+        if project_id:
+            touched_project_ids.add(project_id)
         group_id = row.get("_group_id")
         new_group_name = row.get("_new_group_name")
 
@@ -1099,6 +1151,9 @@ def batch_import_students(
 
         if email:
             existing_emails.add(email)
+
+    for project_id in touched_project_ids:
+        _sync_project_phase_associations(db, project_id)
 
     _log_operation(
         db, current_user.id, "批量导入学员", "student", None,
@@ -1727,6 +1782,11 @@ def list_phases(
         q = q.filter(Phase.project_id == project_id)
 
     phases = q.order_by(Phase.id.desc()).all()
+    associations_changed = False
+    for pid in {p.project_id for p in phases}:
+        associations_changed = _sync_project_phase_associations(db, pid) or associations_changed
+    if associations_changed:
+        db.commit()
     result = []
     for p in phases:
         participant_count = db.query(func.count(func.distinct(PhaseParticipant.student_id))).filter(
@@ -1792,6 +1852,7 @@ def create_phase(
     )
     db.add(phase)
     db.flush()
+    _sync_project_phase_associations(db, data.project_id)
     _log_operation(db, current_user.id, "创建阶段", "phase", phase.id, f"创建阶段 {data.name}")
     db.commit()
     db.refresh(phase)
@@ -1803,7 +1864,9 @@ def create_phase(
         year_name=year_name, project_name=project_name,
         start_date=phase.start_date, end_date=phase.end_date,
         description=phase.description, status=_auto_phase_status(phase),
-        participant_count=0, group_count=0, total_points=0,
+        participant_count=db.query(func.count(PhaseParticipant.id)).filter(PhaseParticipant.phase_id == phase.id).scalar() or 0,
+        group_count=db.query(func.count(PhaseGroup.id)).filter(PhaseGroup.phase_id == phase.id).scalar() or 0,
+        total_points=0,
         allow_ranking=phase.allow_ranking, allow_excellent=phase.allow_excellent,
         excellent_count=phase.excellent_count, prize_description=phase.prize_description,
     )
@@ -1879,6 +1942,8 @@ def get_phase_detail(
     phase = db.query(Phase).filter(Phase.id == phase_id).first()
     if not phase:
         raise HTTPException(status_code=404, detail="阶段不存在")
+    if _sync_project_phase_associations(db, phase.project_id):
+        db.commit()
 
     participant_count = db.query(func.count(func.distinct(PhaseParticipant.student_id))).filter(
         PhaseParticipant.phase_id == phase.id,

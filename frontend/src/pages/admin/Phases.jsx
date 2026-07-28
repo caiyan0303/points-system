@@ -3,8 +3,7 @@ import api from '../../api'
 import AppLayout from '../../components/AppLayout'
 import Toast from '../../components/Toast'
 import {
-  Plus, X, Layers, Users, TrendingUp, Calendar, Clock, CheckCircle,
-  Archive, ArrowLeft, Award, Trophy, Star, Edit, Trash2
+  Plus, X, Calendar, Archive, ArrowLeft, Award, Trophy, Star, Edit
 } from 'lucide-react'
 
 const STATUS_LABELS = { '待开放': '待开放', '进行中': '进行中', '已关闭': '已关闭', '已归档': '已归档' }
@@ -41,6 +40,12 @@ export default function AdminPhases({ embedded = false, initialProjectId = '' })
     const params = {}
     if (yearId) params.year_id = yearId
     const selectedProjectId = projectOverride === null ? projectId : projectOverride
+    if (!selectedProjectId) {
+      setPhases([])
+      setError(null)
+      setLoading(false)
+      return
+    }
     if (selectedProjectId) params.project_id = selectedProjectId
     api.get('/api/admin/phases', { params })
       .then(({ data }) => { setPhases(data.items || data); setLoading(false) })
@@ -58,6 +63,10 @@ export default function AdminPhases({ embedded = false, initialProjectId = '' })
   }, [initialProjectId])
 
   const openCreateModal = () => {
+    if (!projectId) {
+      showToast('请先选择一个培训项目，再创建阶段', 'error')
+      return
+    }
     const selectedProject = projects.find(project => String(project.id) === String(projectId))
     setCreateForm(current => ({
       ...current,
@@ -68,6 +77,8 @@ export default function AdminPhases({ embedded = false, initialProjectId = '' })
   }
 
   const handleCreate = async () => {
+    if (!createForm.project_id || !createForm.year_id) return showToast('请先选择培训项目', 'error')
+    if (!createForm.name.trim()) return showToast('请输入阶段名称', 'error')
     try {
       await api.post('/api/admin/phases', createForm)
       showToast('阶段创建成功')
@@ -349,8 +360,8 @@ export default function AdminPhases({ embedded = false, initialProjectId = '' })
               <h1 className="text-2xl font-bold text-gray-900">阶段管理</h1>
               <p className="text-gray-500 mt-1">管理培训阶段</p>
             </div>
-            <button onClick={openCreateModal} className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700">
-              <Plus className="w-4 h-4" /> 创建阶段
+            <button onClick={openCreateModal} disabled={!projectId} className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-gray-300">
+              <Plus className="w-4 h-4" /> {projectId ? '创建阶段' : '请先选择项目'}
             </button>
           </div>
 
@@ -361,49 +372,61 @@ export default function AdminPhases({ embedded = false, initialProjectId = '' })
                 <option value="">所有年度</option>
                 {years.map(y => <option key={y.id} value={y.id}>{y.name}</option>)}
               </select>
-              <select value={projectId} onChange={(e) => setProjectId(e.target.value)} className="px-3 py-2.5 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500">
-                <option value="">所有项目</option>
-                {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              <select value={projectId} onChange={(e) => {
+                const nextProjectId = e.target.value
+                const selectedProject = projects.find(project => String(project.id) === String(nextProjectId))
+                setProjectId(nextProjectId)
+                setYearId(selectedProject?.year_id ? String(selectedProject.year_id) : '')
+              }} className="px-3 py-2.5 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500">
+                <option value="">请选择培训项目</option>
+                {projects.map(p => <option key={p.id} value={p.id}>{p.year_name ? `${p.year_name} / ` : ''}{p.name}</option>)}
               </select>
               <button onClick={() => fetchPhases()} className="px-4 py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700">筛选</button>
             </div>
+            {!projectId && <p className="mt-3 text-xs text-amber-600">阶段必须归属于培训项目。请先选择项目；如果还没有项目，请返回项目列表新建项目。</p>}
           </div>
 
-          {/* Phase Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Phase List */}
+          <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
             {loading ? (
-              <div className="col-span-full flex items-center justify-center h-48">
+              <div className="flex items-center justify-center h-48">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600" />
               </div>
             ) : error ? (
-              <div className="col-span-full flex items-center justify-center h-48 text-red-400">{error}</div>
+              <div className="flex items-center justify-center h-48 text-red-400">{error}</div>
             ) : phases.length === 0 ? (
-              <div className="col-span-full flex items-center justify-center h-48 text-gray-400">暂无阶段数据</div>
+              <div className="flex items-center justify-center h-48 text-gray-400">{projectId ? '该项目暂无阶段数据' : '请选择项目查看阶段'}</div>
             ) : (
-              phases.map((p) => (
-                <div key={p.id} onClick={() => openDetail(p)} className="bg-white rounded-xl border border-gray-200 p-5 hover:shadow-md cursor-pointer transition-shadow">
-                  <div className="flex items-center justify-between mb-3">
-                    <h3 className="font-semibold text-gray-900">{p.name}</h3>
-                    <span className={`text-xs px-2 py-0.5 rounded-full ${STATUS_COLORS[p.status] || 'bg-gray-100 text-gray-500'}`}>
-                      {STATUS_LABELS[p.status] || p.status}
-                    </span>
-                  </div>
-                  <div className="space-y-2 text-sm">
-                    <div className="flex items-center gap-2 text-gray-500">
-                      <Calendar className="w-3 h-3" /> {p.start_date} ~ {p.end_date}
-                    </div>
-                    <div className="flex items-center gap-4 text-gray-500">
-                      <span className="flex items-center gap-1"><Users className="w-3 h-3" /> {p.total_students || 0} 人</span>
-                      <span className="flex items-center gap-1"><Layers className="w-3 h-3" /> {p.group_count || 0} 组</span>
-                      <span className="flex items-center gap-1"><TrendingUp className="w-3 h-3" /> {p.total_points || 0} 分</span>
-                    </div>
-                  </div>
-                  <div className="mt-3 pt-3 border-t border-gray-100 flex items-center justify-between text-xs text-gray-400">
-                    <span>{p.year_name || '-'} / {p.project_name || '-'}</span>
-                    {p.prize_description && <span className="text-yellow-500 truncate max-w-[200px]">{p.prize_description}</span>}
-                  </div>
-                </div>
-              ))
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[960px]">
+                  <thead className="bg-gray-50">
+                    <tr className="border-b border-gray-100">
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">阶段名称</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">年度 / 培训项目</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">阶段时间</th>
+                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">成员</th>
+                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">小组</th>
+                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">积分</th>
+                      <th className="px-4 py-3 text-center text-xs font-medium text-gray-500">状态</th>
+                      <th className="px-4 py-3 text-center text-xs font-medium text-gray-500">操作</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {phases.map((p) => (
+                      <tr key={p.id} onClick={() => openDetail(p)} className="cursor-pointer hover:bg-indigo-50/40">
+                        <td className="px-4 py-3 text-sm font-semibold text-gray-900">{p.name}</td>
+                        <td className="px-4 py-3 text-sm text-gray-500"><div>{p.year_name || '-'}</div><div className="mt-0.5 text-xs text-gray-400">{p.project_name || '-'}</div></td>
+                        <td className="px-4 py-3 text-sm text-gray-500"><span className="inline-flex items-center gap-1.5"><Calendar className="h-3.5 w-3.5" />{p.start_date} 至 {p.end_date}</span></td>
+                        <td className="px-4 py-3 text-right text-sm text-gray-700">{p.participant_count ?? p.total_students ?? 0} 人</td>
+                        <td className="px-4 py-3 text-right text-sm text-gray-700">{p.group_count || 0} 组</td>
+                        <td className="px-4 py-3 text-right text-sm font-medium text-indigo-600">{p.total_points || 0}</td>
+                        <td className="px-4 py-3 text-center"><span className={`inline-flex rounded-full px-2 py-0.5 text-xs ${STATUS_COLORS[p.status] || 'bg-gray-100 text-gray-500'}`}>{STATUS_LABELS[p.status] || p.status}</span></td>
+                        <td className="px-4 py-3 text-center"><button onClick={(event) => { event.stopPropagation(); openDetail(p) }} className="rounded-lg px-3 py-1.5 text-xs font-medium text-indigo-600 hover:bg-indigo-50">查看详情</button></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </div>
         </>
@@ -422,19 +445,20 @@ export default function AdminPhases({ embedded = false, initialProjectId = '' })
                 <input type="text" value={createForm.name} onChange={(e) => setCreateForm({...createForm, name: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500" />
               </div>
               <div className="grid grid-cols-2 gap-3">
-                <div><label className="block text-sm text-gray-600 mb-1">年度</label>
-                  <select value={createForm.year_id} onChange={(e) => setCreateForm({...createForm, year_id: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500">
+                <div><label className="block text-sm text-gray-600 mb-1">年度 *</label>
+                  <select value={createForm.year_id} disabled className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-sm text-gray-500">
                     <option value="">选择年度</option>
                     {years.map(y => <option key={y.id} value={y.id}>{y.name}</option>)}
                   </select>
                 </div>
-                <div><label className="block text-sm text-gray-600 mb-1">培训项目</label>
-                  <select value={createForm.project_id} onChange={(e) => setCreateForm({...createForm, project_id: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500">
+                <div><label className="block text-sm text-gray-600 mb-1">培训项目 *</label>
+                  <select value={createForm.project_id} disabled className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-sm text-gray-500">
                     <option value="">选择项目</option>
                     {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                   </select>
                 </div>
               </div>
+              <p className="text-xs text-indigo-600">该阶段会自动关联此项目下的全部学员和小组。</p>
               <div className="grid grid-cols-2 gap-3">
                 <div><label className="block text-sm text-gray-600 mb-1">开始日期</label>
                   <input type="date" value={createForm.start_date} onChange={(e) => setCreateForm({...createForm, start_date: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500" />

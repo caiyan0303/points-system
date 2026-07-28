@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import api from '../../api'
 import AppLayout from '../../components/AppLayout'
 import Toast from '../../components/Toast'
-import { Plus, X, Users, TrendingUp, Search, UserPlus, Trash2, ChevronRight, ArrowLeft } from 'lucide-react'
+import { Plus, X, UserPlus, Trash2, ChevronRight, ArrowLeft } from 'lucide-react'
 
 export default function AdminGroups() {
   const [groups, setGroups] = useState([])
@@ -283,31 +283,47 @@ export default function AdminGroups() {
             ) : groups.length === 0 ? (
               <div className="flex items-center justify-center h-48 text-gray-400">暂无小组数据</div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-4">
-                {groups.map((g) => (
-                  <div key={g.id} onClick={() => openDetail(g)} className="bg-white rounded-xl border border-gray-200 p-5 hover:shadow-md cursor-pointer transition-shadow">
-                    <div className="flex items-center justify-between mb-3">
-                      <h3 className="font-semibold text-gray-900">{g.name}</h3>
-                      <div className="flex items-center gap-2">
-                        <button onClick={(event) => { event.stopPropagation(); setDeleteGroup(g) }} aria-label={`删除${g.name}`} className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg">
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                        <ChevronRight className="w-4 h-4 text-gray-400" />
-                      </div>
-                    </div>
-                    <div className="space-y-2 text-sm">
-                      <div className="flex justify-between"><span className="text-gray-500">成员</span><span className="font-medium">{g.member_count || 0} 人</span></div>
-                      <div className="flex justify-between"><span className="text-gray-500">成员个人积分</span><span className="font-medium text-indigo-600">{g.personal_points || 0}</span></div>
-                      <div className="flex justify-between"><span className="text-gray-500">团队积分</span><span className="font-medium text-orange-600">{g.team_points || 0}</span></div>
-                      <div className="flex justify-between"><span className="text-gray-500">团队最终得分</span><span className="font-medium text-green-600">{g.final_score || g.total_points || 0}</span></div>
-                      <div className="flex justify-between"><span className="text-gray-500">排名</span><span className="font-medium">{g.rank ? `第 ${g.rank} 名` : '-'}</span></div>
-                    </div>
-                    <div className="mt-3 pt-3 border-t border-gray-100 flex items-center gap-4 text-xs text-gray-400">
-                      <span>{g.year_name || '-'}</span>
-                      <span>{g.project_name || '-'}</span>
-                    </div>
-                  </div>
-                ))}
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[920px]">
+                  <thead className="bg-gray-50">
+                    <tr className="border-b border-gray-100">
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">小组名称</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">年度 / 培训项目</th>
+                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">成员</th>
+                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">成员个人积分</th>
+                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">团队积分</th>
+                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">团队最终得分</th>
+                      <th className="px-4 py-3 text-center text-xs font-medium text-gray-500">排名</th>
+                      <th className="px-4 py-3 text-center text-xs font-medium text-gray-500">操作</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {groups.map((g) => (
+                      <tr key={g.id} onClick={() => openDetail(g)} className="cursor-pointer hover:bg-indigo-50/40">
+                        <td className="px-4 py-3 text-sm font-semibold text-gray-900">{g.name}</td>
+                        <td className="px-4 py-3 text-sm text-gray-500">
+                          <div>{g.year_name || '-'}</div>
+                          <div className="mt-0.5 text-xs text-gray-400">{g.project_name || '-'}</div>
+                        </td>
+                        <td className="px-4 py-3 text-right text-sm text-gray-700">{g.member_count || 0} 人</td>
+                        <td className="px-4 py-3 text-right text-sm font-medium text-indigo-600">{g.personal_points || 0}</td>
+                        <td className="px-4 py-3 text-right text-sm font-medium text-orange-600">{g.team_points || 0}</td>
+                        <td className="px-4 py-3 text-right text-sm font-semibold text-green-600">{g.final_score || g.total_points || 0}</td>
+                        <td className="px-4 py-3 text-center text-sm text-gray-700">{g.rank ? `第 ${g.rank} 名` : '-'}</td>
+                        <td className="px-4 py-3 text-center">
+                          <div className="flex items-center justify-center gap-1">
+                            <button onClick={(event) => { event.stopPropagation(); openDetail(g) }} className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs text-indigo-600 hover:bg-indigo-50">
+                              查看 <ChevronRight className="h-3.5 w-3.5" />
+                            </button>
+                            <button onClick={(event) => { event.stopPropagation(); setDeleteGroup(g) }} aria-label={`删除${g.name}`} className="rounded-lg p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-500">
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
           </div>
