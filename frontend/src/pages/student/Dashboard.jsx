@@ -2,9 +2,13 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import api from '../../api'
 import AppLayout from '../../components/AppLayout'
-import { ArrowRight, Award, Crown, Gift, ShoppingBag, Sparkles, TrendingUp, Trophy, Users, Zap } from 'lucide-react'
+import { ArrowRight, Award, Crown, Gift, ShoppingBag, Sparkles, TrendingUp, Trophy, Users } from 'lucide-react'
 
-const rankTone = ['from-amber-300 to-yellow-500', 'from-slate-300 to-slate-500', 'from-orange-300 to-orange-500']
+const rankStyle = [
+  'bg-amber-100 text-amber-700 ring-amber-200',
+  'bg-slate-200 text-slate-600 ring-slate-300',
+  'bg-orange-100 text-orange-700 ring-orange-200',
+]
 
 export default function StudentDashboard() {
   const navigate = useNavigate()
@@ -12,6 +16,7 @@ export default function StudentDashboard() {
   const [phases, setPhases] = useState([])
   const [phaseDetail, setPhaseDetail] = useState(null)
   const [teamData, setTeamData] = useState(null)
+  const [rankingTab, setRankingTab] = useState('personal')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
@@ -36,44 +41,51 @@ export default function StudentDashboard() {
   const personalTop = useMemo(() => (phaseDetail?.personal_rankings || phaseDetail?.rankings || []).slice(0, 3), [phaseDetail])
   const teamTop = useMemo(() => (teamData?.all_groups || phaseDetail?.group_rankings || []).slice(0, 3), [teamData, phaseDetail])
   const currentPhase = phases.find((item) => ['进行中', 'in_progress'].includes(item.status)) || phases[0]
+  const rankingRows = rankingTab === 'personal' ? personalTop : teamTop
 
   if (loading) return <AppLayout><div className="flex h-72 items-center justify-center"><div className="h-10 w-10 animate-spin rounded-full border-2 border-indigo-200 border-b-indigo-600" /></div></AppLayout>
   if (error || !data) return <AppLayout><div className="glass-panel rounded-3xl p-12 text-center text-slate-500">{error || '暂无数据'}</div></AppLayout>
 
   return <AppLayout>
-    <section className="mb-7 flex flex-col justify-between gap-4 md:flex-row md:items-end">
-      <div><div className="mb-2 flex items-center gap-2 text-sm font-semibold text-indigo-600"><Sparkles className="h-4 w-4" />MY POINTS COCKPIT</div><h1 className="text-3xl font-black tracking-tight text-slate-900 sm:text-4xl">你好，{data.real_name}<span className="gradient-text">，欢迎回到积分驾驶舱</span></h1><p className="mt-2 text-sm text-slate-500">{data.year_name} · {data.project_name} · {data.group_name || '暂未分组'}</p></div>
-      <div className="glass-chip flex items-center gap-2 rounded-full px-4 py-2 text-xs font-semibold text-slate-600"><Zap className="h-4 w-4 text-amber-500" />每一次参与，都在积累成长能量</div>
+    <section className="mb-6">
+      <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
+        <div><p className="mb-1 flex items-center gap-2 text-xs font-bold uppercase tracking-[.2em] text-indigo-500"><Sparkles className="h-3.5 w-3.5" />My Points Cockpit</p><h1 className="text-3xl font-black tracking-tight text-slate-900">你好，{data.real_name} <span className="inline-block origin-bottom-right animate-[wave_1.8s_ease-in-out_infinite]">👋</span></h1><p className="mt-2 text-sm text-slate-500">持续学习，积极挑战，为团队创造更多价值！</p></div>
+        <p className="text-xs font-medium text-slate-400">{data.year_name} · {data.project_name} · {data.group_name || '暂未分组'}</p>
+      </div>
     </section>
 
-    <section className="relative mb-7 overflow-hidden rounded-[32px] bg-gradient-to-br from-indigo-600 via-violet-600 to-cyan-500 p-7 text-white shadow-2xl shadow-indigo-500/20 sm:p-9 soft-grid">
-      <div className="absolute -right-12 -top-16 h-64 w-64 rounded-full bg-white/15 blur-2xl" /><div className="absolute bottom-0 right-12 hidden h-44 w-44 rotate-12 rounded-[44px] border border-white/20 bg-white/10 shadow-2xl backdrop-blur-md lg:block" />
-      <div className="relative z-10 grid gap-8 lg:grid-cols-[1.2fr_.8fr] lg:items-center">
-        <div><div className="mb-6 inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-semibold backdrop-blur-md"><Trophy className="h-4 w-4 text-amber-300" />当前项目表现</div><p className="text-sm text-indigo-100">我的积分</p><div className="mt-1 flex items-end gap-3"><strong className="text-6xl font-black tracking-tight sm:text-7xl">{data.period_points || 0}</strong><span className="pb-2 text-xl font-bold text-indigo-100">分</span></div><p className="mt-4 max-w-lg text-sm leading-6 text-indigo-100/90">个人累计积分用于项目排名和团队最终得分，持续完成任务，向更高排名发起挑战。</p></div>
-        <div className="grid grid-cols-2 gap-3">
-          <button onClick={() => navigate('/student/rankings')} className="rounded-3xl border border-white/20 bg-white/12 p-5 text-left backdrop-blur-lg transition hover:bg-white/20"><Award className="mb-4 h-7 w-7 text-amber-300" /><p className="text-xs text-indigo-100">项目排名</p><p className="mt-1 text-3xl font-black">{data.period_rank ? `第 ${data.period_rank} 名` : '-'}</p><span className="mt-4 flex items-center gap-1 text-xs text-white/80">查看排行榜 <ArrowRight className="h-3 w-3" /></span></button>
-          <button onClick={() => navigate('/student/points')} className="rounded-3xl border border-white/20 bg-white/12 p-5 text-left backdrop-blur-lg transition hover:bg-white/20"><TrendingUp className="mb-4 h-7 w-7 text-cyan-200" /><p className="text-xs text-indigo-100">当前阶段排名</p><p className="mt-1 text-3xl font-black">{data.current_phase_rank ? `第 ${data.current_phase_rank} 名` : '-'}</p><span className="mt-4 block truncate text-xs text-white/80">{currentPhase?.phase_name || data.current_phase || '暂无阶段'}</span></button>
+    <section className="mb-6 grid gap-5 lg:grid-cols-[1.25fr_.75fr]">
+      <button onClick={() => navigate('/student/points')} className="group relative min-h-[250px] overflow-hidden rounded-[30px] bg-gradient-to-br from-indigo-600 via-violet-600 to-blue-500 p-7 text-left text-white shadow-2xl shadow-indigo-400/25 soft-grid sm:p-8">
+        <div className="absolute -right-12 -top-20 h-64 w-64 rounded-full bg-cyan-300/25 blur-3xl" />
+        <div className="absolute bottom-5 right-7 hidden h-36 w-36 items-center justify-center rounded-full border border-white/20 bg-white/10 shadow-2xl backdrop-blur-md sm:flex"><div className="absolute inset-4 rounded-full border border-dashed border-white/30" /><Trophy className="relative h-16 w-16 text-amber-200 drop-shadow-xl transition duration-300 group-hover:scale-110 group-hover:rotate-6" /><span className="absolute -right-2 top-2 h-4 w-4 rounded-full bg-amber-300 shadow-lg shadow-amber-200" /></div>
+        <div className="relative z-10 flex h-full max-w-[65%] flex-col justify-between"><div><p className="text-sm font-semibold text-indigo-100">个人总积分（当前项目）</p><div className="mt-2 flex items-end gap-2"><strong className="text-6xl font-black tracking-tight sm:text-7xl">{data.period_points || 0}</strong><span className="pb-2 text-lg font-bold text-indigo-100">分</span></div></div><div className="mt-8 grid grid-cols-2 gap-6 text-sm"><div><p className="text-xs text-indigo-200">当前排名</p><strong className="mt-1 block text-xl">{data.period_rank ? `第 ${data.period_rank} 名` : '-'}</strong></div><div><p className="text-xs text-indigo-200">阶段排名</p><strong className="mt-1 block text-xl">{data.current_phase_rank ? `第 ${data.current_phase_rank} 名` : '-'}</strong></div></div></div>
+      </button>
+
+      <div className="glass-panel hover-lift relative min-h-[250px] overflow-hidden rounded-[30px] border p-7 shadow-xl shadow-indigo-100/50">
+        <div className="absolute -right-8 -top-8 h-40 w-40 rounded-full bg-gradient-to-br from-amber-200/60 to-emerald-200/50 blur-2xl" />
+        <div className="relative flex h-full flex-col"><div className="flex items-start justify-between"><div><p className="text-xs font-bold uppercase tracking-[.18em] text-violet-500">Rewards Mall</p><h2 className="mt-2 text-2xl font-black text-slate-900">积分商城</h2><p className="mt-2 text-sm leading-6 text-slate-500">用积分兑换心仪好礼，把每一次成长变成真实奖励。</p></div><div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-[24px] bg-gradient-to-br from-amber-300 via-orange-300 to-emerald-400 text-white shadow-lg shadow-amber-200/60"><Gift className="h-10 w-10" /></div></div><div className="mt-auto flex items-end justify-between gap-4"><div><p className="text-xs text-slate-400">可用积分</p><p className="mt-1 text-3xl font-black text-violet-600">{data.available_points || 0}<span className="ml-1 text-sm">分</span></p></div><button onClick={() => navigate('/student/shop')} className="inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-indigo-600 to-violet-600 px-5 py-3 text-sm font-black text-white shadow-lg shadow-indigo-300/40 transition hover:-translate-y-0.5"><ShoppingBag className="h-4 w-4" />去兑换</button></div></div>
+      </div>
+    </section>
+
+    <section className="grid gap-5 lg:grid-cols-[1.25fr_.75fr]">
+      <div className="glass-panel overflow-hidden rounded-[30px] border shadow-xl shadow-indigo-100/40">
+        <div className="flex flex-col gap-4 border-b border-white/80 px-6 pt-6 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-xs font-bold uppercase tracking-[.18em] text-indigo-500">Project Ranking</p><h2 className="mt-1 text-xl font-black text-slate-900">排行榜</h2></div><button onClick={() => navigate(rankingTab === 'personal' ? '/student/rankings' : '/student/rankings?tab=team')} className="mb-4 inline-flex items-center gap-1 text-xs font-bold text-indigo-600">查看全部 <ArrowRight className="h-3.5 w-3.5" /></button></div>
+        <div className="relative mx-6 mt-4 grid grid-cols-2 rounded-2xl bg-slate-100/80 p-1">
+          <span className={`absolute bottom-1 top-1 w-[calc(50%-4px)] rounded-xl bg-white shadow-md transition-transform duration-300 ${rankingTab === 'team' ? 'translate-x-[100%]' : 'translate-x-0'}`} />
+          <button onClick={() => setRankingTab('personal')} className={`relative z-10 flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-black transition ${rankingTab === 'personal' ? 'text-indigo-700' : 'text-slate-400'}`}><Award className="h-4 w-4" />阶段个人榜</button>
+          <button onClick={() => setRankingTab('team')} className={`relative z-10 flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-black transition ${rankingTab === 'team' ? 'text-violet-700' : 'text-slate-400'}`}><Users className="h-4 w-4" />团队榜</button>
+        </div>
+        <div className="p-6">
+          <div className="mb-4 flex items-center justify-between"><p className="text-xs font-semibold text-slate-400">{rankingTab === 'personal' ? currentPhase?.phase_name || '当前阶段' : '团队最终得分排名'}</p>{rankingRows[0] && <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-bold text-amber-600"><Crown className="h-3 w-3" />{rankingTab === 'personal' ? '阶段冠军' : '团队冠军'}</span>}</div>
+          {rankingRows.length ? <div className="space-y-2">{rankingRows.map((item, index) => {
+            const name = rankingTab === 'personal' ? item.student_name : item.name || item.group_name
+            const points = rankingTab === 'personal' ? item.total_points || 0 : item.final_score ?? item.total_points ?? 0
+            return <div key={item.student_id || item.id || item.group_id} className={`flex items-center gap-4 rounded-2xl px-4 py-3.5 transition ${index === 0 ? 'bg-gradient-to-r from-amber-50 to-yellow-50/60 ring-1 ring-amber-100' : item.is_me || item.is_my_group ? 'bg-indigo-50/80' : 'bg-white/55'}`}><span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-black ring-1 ${rankStyle[index] || 'bg-slate-100 text-slate-500 ring-slate-200'}`}>{index + 1}</span><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-100 to-violet-100 font-black text-indigo-700">{rankingTab === 'personal' ? name?.slice(-1) : <Users className="h-5 w-5" />}</span><div className="min-w-0 flex-1"><p className="truncate text-sm font-black text-slate-800">{name}{(item.is_me || item.is_my_group) && <span className="ml-2 text-[10px] font-bold text-indigo-500">我的位置</span>}</p><p className="mt-0.5 text-[11px] text-slate-400">{rankingTab === 'personal' ? item.group_name || '暂未分组' : `${item.member_count || 0} 名成员`}</p></div><strong className="text-base font-black text-indigo-600">{points} 分</strong></div>
+          })}</div> : <p className="py-12 text-center text-sm text-slate-400">暂无排名数据</p>}
         </div>
       </div>
-    </section>
 
-    <section className="mb-7 grid gap-6 lg:grid-cols-2">
-      <div className="glass-panel hover-lift rounded-[28px] border p-6">
-        <div className="mb-5 flex items-center justify-between"><div><p className="text-xs font-bold uppercase tracking-[.18em] text-indigo-500">Stage Ranking</p><h2 className="mt-1 text-xl font-black text-slate-900">阶段个人榜</h2></div><button onClick={() => navigate('/student/rankings')} className="rounded-xl bg-indigo-50 px-3 py-2 text-xs font-bold text-indigo-600">完整榜单</button></div>
-        {personalTop[0] ? <div className="mb-4 rounded-3xl bg-gradient-to-r from-amber-50 to-yellow-100/70 p-5 ring-1 ring-amber-200/70"><div className="flex items-center gap-4"><div className="relative flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-300 to-yellow-500 text-lg font-black text-white shadow-lg shadow-amber-300/40">{personalTop[0].student_name?.slice(-1)}<Crown className="absolute -right-2 -top-3 h-6 w-6 rotate-12 text-amber-500" /></div><div className="min-w-0 flex-1"><span className="rounded-full bg-amber-500 px-2 py-1 text-[10px] font-bold text-white">阶段冠军</span><p className="mt-2 truncate text-lg font-black text-slate-900">{personalTop[0].student_name}</p><p className="text-xs text-amber-700">获得阶段奖励</p></div><strong className="text-2xl font-black text-amber-600">{personalTop[0].total_points || 0}<span className="text-xs"> 分</span></strong></div></div> : <p className="py-8 text-center text-sm text-slate-400">暂无阶段排名</p>}
-        <div className="space-y-2">{personalTop.slice(1).map((item, index) => <div key={item.student_id} className="flex items-center gap-3 rounded-2xl bg-white/55 px-4 py-3"><div className={`flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br ${rankTone[index + 1]} text-xs font-black text-white`}>{index + 2}</div><span className="flex-1 font-bold text-slate-700">{item.student_name}</span><span className="font-black text-indigo-600">{item.total_points || 0} 分</span></div>)}</div>
-      </div>
-
-      <div className="glass-panel hover-lift rounded-[28px] border p-6">
-        <div className="mb-5 flex items-center justify-between"><div><p className="text-xs font-bold uppercase tracking-[.18em] text-violet-500">Team Ranking</p><h2 className="mt-1 text-xl font-black text-slate-900">团队榜</h2></div><button onClick={() => navigate('/student/rankings?tab=team')} className="rounded-xl bg-violet-50 px-3 py-2 text-xs font-bold text-violet-600">完整榜单</button></div>
-        {teamTop[0] ? <div className="mb-4 rounded-3xl bg-gradient-to-r from-violet-50 to-indigo-100/70 p-5 ring-1 ring-violet-200/70"><div className="flex items-center gap-4"><div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-500 to-indigo-600 text-white shadow-lg shadow-violet-300/40"><Users className="h-7 w-7" /></div><div className="min-w-0 flex-1"><span className="rounded-full bg-violet-600 px-2 py-1 text-[10px] font-bold text-white">团队冠军</span><p className="mt-2 truncate text-lg font-black text-slate-900">{teamTop[0].name || teamTop[0].group_name}</p><p className="text-xs text-violet-600">第一名团队获得团队奖励</p></div><strong className="text-2xl font-black text-violet-600">{teamTop[0].final_score ?? teamTop[0].total_points ?? 0}<span className="text-xs"> 分</span></strong></div></div> : <p className="py-8 text-center text-sm text-slate-400">暂无团队排名</p>}
-        <div className="space-y-2">{teamTop.slice(1).map((item, index) => <div key={item.id || item.group_id} className={`flex items-center gap-3 rounded-2xl px-4 py-3 ${item.is_my_group ? 'bg-indigo-50 ring-1 ring-indigo-100' : 'bg-white/55'}`}><div className={`flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br ${rankTone[index + 1]} text-xs font-black text-white`}>{index + 2}</div><span className="flex-1 font-bold text-slate-700">{item.name || item.group_name}</span><span className="font-black text-violet-600">{item.final_score ?? item.total_points ?? 0} 分</span></div>)}</div>
-      </div>
-    </section>
-
-    <section className="mb-7 grid gap-6 lg:grid-cols-[.8fr_1.2fr]">
-      <div className="relative overflow-hidden rounded-[28px] bg-gradient-to-br from-fuchsia-500 via-violet-600 to-indigo-600 p-6 text-white shadow-xl shadow-violet-400/20"><div className="absolute -right-10 -top-10 h-40 w-40 rounded-full bg-white/20 blur-2xl" /><div className="relative"><div className="mb-6 flex h-12 w-12 items-center justify-center rounded-2xl bg-white/15 backdrop-blur-md"><Gift className="h-6 w-6 text-amber-200" /></div><p className="text-sm text-violet-100">我的可兑换积分</p><p className="mt-1 text-4xl font-black">{data.available_points || 0}<span className="ml-1 text-base">分</span></p><button onClick={() => navigate('/student/shop')} className="mt-7 flex w-full items-center justify-center gap-2 rounded-2xl bg-white px-4 py-3 text-sm font-black text-violet-700 shadow-lg">立即兑换 <ShoppingBag className="h-4 w-4" /></button></div></div>
-      <div className="glass-panel rounded-[28px] border p-6"><div className="mb-5 flex items-center justify-between"><div><p className="text-xs font-bold uppercase tracking-[.18em] text-cyan-600">Points Feed</p><h2 className="mt-1 text-xl font-black">积分流水动态</h2></div><button onClick={() => navigate('/student/points')} className="text-xs font-bold text-indigo-600">查看全部</button></div><div className="space-y-3">{data.recent_points?.length ? data.recent_points.slice(0, 5).map((item) => <div key={item.id} className="flex items-center gap-4 rounded-2xl bg-white/55 p-3"><div className={`flex h-10 w-10 items-center justify-center rounded-xl ${Number(item.points) >= 0 ? 'bg-emerald-100 text-emerald-600' : 'bg-rose-100 text-rose-600'}`}><TrendingUp className="h-5 w-5" /></div><div className="min-w-0 flex-1"><p className="truncate text-sm font-bold text-slate-800">{item.category || item.description || '个人积分'}</p><p className="text-xs text-slate-400">{new Date(item.created_at).toLocaleString('zh-CN')}</p></div><strong className={Number(item.points) >= 0 ? 'text-emerald-600' : 'text-rose-600'}>{Number(item.points) > 0 ? '+' : ''}{item.points} 分</strong></div>) : <p className="py-10 text-center text-sm text-slate-400">暂无积分动态</p>}</div></div>
+      <div className="glass-panel rounded-[30px] border p-6 shadow-xl shadow-indigo-100/40"><div className="mb-5 flex items-center justify-between"><div><p className="text-xs font-bold uppercase tracking-[.18em] text-cyan-600">Project Feed</p><h2 className="mt-1 text-xl font-black text-slate-900">项目动态</h2></div><button onClick={() => navigate('/student/points')} className="text-xs font-bold text-indigo-600">查看全部</button></div><div className="space-y-3">{data.recent_points?.length ? data.recent_points.slice(0, 5).map((item) => <div key={item.id} className="group flex items-start gap-3 rounded-2xl p-3 transition hover:bg-white/70"><div className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${Number(item.points) >= 0 ? 'bg-indigo-100 text-indigo-600' : 'bg-rose-100 text-rose-600'}`}><TrendingUp className="h-4 w-4" /></div><div className="min-w-0 flex-1"><div className="flex items-start justify-between gap-2"><p className="truncate text-sm font-black text-slate-800">{item.category || item.description || '个人积分'}</p><span className="shrink-0 text-[10px] text-slate-400">{new Date(item.created_at).toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' })}</span></div><p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-400">积分已更新，本次获得 <strong className={Number(item.points) >= 0 ? 'text-indigo-600' : 'text-rose-600'}>{Number(item.points) > 0 ? '+' : ''}{item.points} 分</strong></p></div></div>) : <p className="py-12 text-center text-sm text-slate-400">暂无项目动态</p>}</div></div>
     </section>
   </AppLayout>
 }

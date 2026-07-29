@@ -24,3 +24,4 @@ body { margin: 0; min-width: 320px; min-height: 100vh; }
 .hover-lift { transition: transform .25s ease, box-shadow .25s ease, border-color .25s ease; }
 .hover-lift:hover { transform: translateY(-4px); box-shadow: 0 24px 65px rgba(67,56,202,.16); }
 @keyframes float-aurora { 0%,100% { transform: translate3d(0,0,0) scale(1); } 50% { transform: translate3d(0,-18px,0) scale(1.06); } }
+@keyframes wave { 0%,100% { transform: rotate(0deg); } 20% { transform: rotate(12deg); } 40% { transform: rotate(-6deg); } 60% { transform: rotate(10deg); } 80% { transform: rotate(-3deg); } }
