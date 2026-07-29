@@ -291,7 +291,7 @@ export default function AdminPhases({ embedded = false, initialProjectId = '' })
                           <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">小组</th>
                           <th className="text-right px-4 py-3 text-xs font-medium text-gray-500">成员数</th>
                           <th className="text-right px-4 py-3 text-xs font-medium text-gray-500">成员个人积分</th>
-                          <th className="text-right px-4 py-3 text-xs font-medium text-gray-500">团队积分</th>
+                          <th className="text-right px-4 py-3 text-xs font-medium text-gray-500">小组积分</th>
                           <th className="text-right px-4 py-3 text-xs font-medium text-gray-500">最终得分</th>
                         </tr>
                       </thead>

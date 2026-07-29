@@ -40,7 +40,7 @@ export default function StudentTeam() {
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
           <div className="px-5 py-4 border-b border-gray-100"><h2 className="font-semibold text-gray-900 flex items-center gap-2"><Award className="w-4 h-4 text-amber-500" /> 所有小组积分排名</h2></div>
           {groups.length ? <div className="overflow-x-auto"><table className="w-full text-sm">
-            <thead className="bg-gray-50 text-gray-500"><tr><th className="px-4 py-3 text-left">排名</th><th className="px-4 py-3 text-left">小组</th><th className="px-4 py-3 text-right">成员人数</th><th className="px-4 py-3 text-right">成员个人积分合计</th><th className="px-4 py-3 text-right">团队任务积分</th><th className="px-4 py-3 text-right">团队最终得分</th></tr></thead>
+            <thead className="bg-gray-50 text-gray-500"><tr><th className="px-4 py-3 text-left">排名</th><th className="px-4 py-3 text-left">小组</th><th className="px-4 py-3 text-right">成员人数</th><th className="px-4 py-3 text-right">成员个人积分合计</th><th className="px-4 py-3 text-right">小组任务积分</th><th className="px-4 py-3 text-right">小组最终得分</th></tr></thead>
             <tbody className="divide-y divide-gray-100">{groups.map((item) => <tr key={item.id} className={item.is_my_group ? 'bg-indigo-50/60' : 'hover:bg-gray-50'}>
               <td className="px-4 py-3"><span className={`inline-flex items-center justify-center w-8 h-8 rounded-full font-bold ${Number(item.rank) === 1 ? 'bg-amber-100 text-amber-700' : Number(item.rank) === 2 ? 'bg-gray-200 text-gray-700' : Number(item.rank) === 3 ? 'bg-orange-100 text-orange-700' : 'text-gray-500'}`}>{item.rank}</span></td>
               <td className="px-4 py-3 font-medium text-gray-900">{item.name}{item.is_my_group && <span className="ml-2 text-xs px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700">我的小组</span>}</td>
@@ -55,8 +55,8 @@ export default function StudentTeam() {
               <div><p className="text-sm text-gray-500">我的小组</p><h2 className="text-2xl font-bold text-gray-900 mt-1">{group.name || '暂未分组'}</h2><p className="text-sm text-gray-500 mt-1 flex items-center gap-1"><Users className="w-4 h-4" /> {group.member_count || 0} 人</p></div>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-6 text-center">
                 <div><p className="text-2xl font-bold text-indigo-600">{group.personal_points || 0}</p><p className="text-xs text-gray-500 mt-1">成员个人积分合计</p></div>
-                <div><p className="text-2xl font-bold text-orange-600">{group.team_points || 0}</p><p className="text-xs text-gray-500 mt-1">团队任务积分</p></div>
-                <div><p className="text-2xl font-bold text-green-600">{group.final_score || 0}</p><p className="text-xs text-gray-500 mt-1">团队最终得分</p></div>
+                <div><p className="text-2xl font-bold text-orange-600">{group.team_points || 0}</p><p className="text-xs text-gray-500 mt-1">小组任务积分</p></div>
+                <div><p className="text-2xl font-bold text-green-600">{group.final_score || 0}</p><p className="text-xs text-gray-500 mt-1">小组最终得分</p></div>
                 <div><p className="text-2xl font-bold text-amber-600">{group.rank ? `第 ${group.rank} 名` : '-'}</p><p className="text-xs text-gray-500 mt-1">小组排名</p></div>
               </div>
             </div>
@@ -68,8 +68,8 @@ export default function StudentTeam() {
           </div>
 
           <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-            <div className="px-5 py-4 border-b border-gray-100"><h3 className="font-semibold text-gray-900">团队积分明细</h3></div>
-            {records.length ? <div className="overflow-x-auto"><table className="w-full text-sm"><thead className="bg-gray-50 text-gray-500"><tr><th className="px-4 py-3 text-left">阶段</th><th className="px-4 py-3 text-left">积分类别</th><th className="px-4 py-3 text-left">积分事项</th><th className="px-4 py-3 text-right">团队积分</th><th className="px-4 py-3 text-left">获得时间</th></tr></thead><tbody className="divide-y divide-gray-100">{records.map((record) => <tr key={record.id} className="hover:bg-gray-50"><td className="px-4 py-3 text-gray-500">{record.phase_name || '项目级'}</td><td className="px-4 py-3">{record.category || '-'}</td><td className="px-4 py-3">{record.item_name || '-'}</td><td className="px-4 py-3 text-right font-semibold text-orange-600">{Number(record.points) > 0 ? '+' : ''}{record.points}</td><td className="px-4 py-3 text-gray-500">{record.obtained_date?.slice(0, 10) || '-'}</td></tr>)}</tbody></table></div> : <p className="py-10 text-center text-sm text-gray-400">暂无团队积分记录</p>}
+            <div className="px-5 py-4 border-b border-gray-100"><h3 className="font-semibold text-gray-900">小组积分明细</h3></div>
+            {records.length ? <div className="overflow-x-auto"><table className="w-full text-sm"><thead className="bg-gray-50 text-gray-500"><tr><th className="px-4 py-3 text-left">阶段</th><th className="px-4 py-3 text-left">积分类别</th><th className="px-4 py-3 text-left">积分事项</th><th className="px-4 py-3 text-right">小组积分</th><th className="px-4 py-3 text-left">获得时间</th></tr></thead><tbody className="divide-y divide-gray-100">{records.map((record) => <tr key={record.id} className="hover:bg-gray-50"><td className="px-4 py-3 text-gray-500">{record.phase_name || '项目级'}</td><td className="px-4 py-3">{record.category || '-'}</td><td className="px-4 py-3">{record.item_name || '-'}</td><td className="px-4 py-3 text-right font-semibold text-orange-600">{Number(record.points) > 0 ? '+' : ''}{record.points}</td><td className="px-4 py-3 text-gray-500">{record.obtained_date?.slice(0, 10) || '-'}</td></tr>)}</tbody></table></div> : <p className="py-10 text-center text-sm text-gray-400">暂无小组积分记录</p>}
           </div>
         </div>
       )}

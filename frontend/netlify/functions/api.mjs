@@ -537,7 +537,7 @@ async function adminExtendedRoutes(request, pathname, url) {
       ['学员',`SELECT u.id,u.real_name AS 姓名,u.username AS 登录账号,u.system AS 体系,u.level1_dept AS 一级部门,u.position AS 职位信息,u.email AS 邮箱,u.phone AS 电话,u.account_status AS 账号状态,y.name AS 年度,p.name AS 项目名称,g.name AS 小组 FROM users u LEFT JOIN project_enrollments pe ON pe.student_id=u.id LEFT JOIN academic_years y ON y.id=pe.year_id LEFT JOIN training_projects p ON p.id=pe.project_id LEFT JOIN groups g ON g.id=pe.group_id WHERE u.role='student' ORDER BY u.id`],
       ['小组',`SELECT g.id,y.name AS 年度,p.name AS 项目名称,g.name AS 小组名称,COUNT(gm.student_id)::int AS 成员数 FROM groups g LEFT JOIN academic_years y ON y.id=g.year_id LEFT JOIN training_projects p ON p.id=g.project_id LEFT JOIN group_members gm ON gm.group_id=g.id GROUP BY g.id,y.name,p.name ORDER BY g.id`],
       ['个人积分流水',`SELECT pt.id,pt.record_number AS 流水号,u.real_name AS 学员,y.name AS 年度,p.name AS 项目名称,ph.name AS 阶段,g.name AS 小组,pt.category AS 积分分类,pt.item_name AS 积分事项,pt.points AS 积分,pt.data_source AS 数据来源,pt.source_note AS 来源说明,pt.description AS 备注,pt.status AS 状态,pt.obtained_date AS 获得时间,pt.created_at AS 创建时间 FROM points pt JOIN users u ON u.id=pt.student_id LEFT JOIN academic_years y ON y.id=pt.year_id LEFT JOIN training_projects p ON p.id=pt.project_id LEFT JOIN phases ph ON ph.id=pt.phase_id LEFT JOIN groups g ON g.id=pt.group_id ORDER BY pt.id`],
-      ['团队积分流水',`SELECT tp.id,tp.record_number AS 流水号,g.name AS 小组,y.name AS 年度,p.name AS 项目名称,ph.name AS 阶段,tp.category AS 积分分类,tp.item_name AS 积分事项,tp.points AS 积分,tp.data_source AS 数据来源,tp.source_note AS 来源说明,tp.remark AS 备注,tp.status AS 状态,tp.obtained_date AS 获得时间,tp.created_at AS 创建时间 FROM team_points tp JOIN groups g ON g.id=tp.group_id LEFT JOIN academic_years y ON y.id=tp.year_id LEFT JOIN training_projects p ON p.id=tp.project_id LEFT JOIN phases ph ON ph.id=tp.phase_id ORDER BY tp.id`],
+      ['小组积分流水',`SELECT tp.id,tp.record_number AS 流水号,g.name AS 小组,y.name AS 年度,p.name AS 项目名称,ph.name AS 阶段,tp.category AS 积分分类,tp.item_name AS 积分事项,tp.points AS 积分,tp.data_source AS 数据来源,tp.source_note AS 来源说明,tp.remark AS 备注,tp.status AS 状态,tp.obtained_date AS 获得时间,tp.created_at AS 创建时间 FROM team_points tp JOIN groups g ON g.id=tp.group_id LEFT JOIN academic_years y ON y.id=tp.year_id LEFT JOIN training_projects p ON p.id=tp.project_id LEFT JOIN phases ph ON ph.id=tp.phase_id ORDER BY tp.id`],
       ['商品',`SELECT id,name AS 商品名称,points_required AS 所需积分,total_stock AS 总库存,available_stock AS 可用库存,on_site_stock AS 现场库存,product_status AS 状态,created_at AS 创建时间 FROM products ORDER BY id`],
       ['兑换',`SELECT r.id,u.real_name AS 学员,p.name AS 商品,r.points_spent AS 消耗积分,r.status AS 状态,r.reject_reason AS 拒绝原因,r.express_company AS 快递公司,r.tracking_number AS 快递单号,r.created_at AS 申请时间 FROM redemptions r JOIN users u ON u.id=r.student_id JOIN products p ON p.id=r.product_id ORDER BY r.id`],
       ['奖励',`SELECT pa.id,u.real_name AS 学员,p.name AS 商品,pa.award_type AS 奖励类型,pa.description AS 描述,pa.created_at AS 发放时间 FROM prize_awards pa JOIN users u ON u.id=pa.student_id JOIN products p ON p.id=pa.product_id ORDER BY pa.id`],
@@ -704,13 +704,13 @@ async function adminExtendedRoutes(request, pathname, url) {
   }
   if(pathname==='/api/admin/team-points'&&request.method==='POST'){
     const input=await body(request),groupId=numberOrNull(input.group_id),projectId=numberOrNull(input.project_id),phaseId=numberOrNull(input.phase_id),category=input.category||'';let points=Number(input.points)
-    if(!groupId||!projectId||!phaseId||!Number.isFinite(points)||points===0)return json({detail:'请选择小组、项目、阶段并填写有效团队积分'},400)
+    if(!groupId||!projectId||!phaseId||!Number.isFinite(points)||points===0)return json({detail:'请选择小组、项目、阶段并填写有效小组积分'},400)
     const group=await one('SELECT * FROM groups WHERE id=$1 AND project_id=$2',[groupId,projectId]);if(!group)return json({detail:'所选小组不属于该项目'},400)
     if(phaseId&&!await one('SELECT id FROM phases WHERE id=$1 AND project_id=$2',[phaseId,projectId]))return json({detail:'所选阶段不属于该项目'},400)
     const allowed=validPointValues(category,'团队');if(allowed&&(!allowed.length||!allowed.includes(points)))return json({detail:`“${category}”积分值不符合当前规则`},400)
     const itemName=String(input.item_name||'').trim(),taskKey=taskKeyFor(input.task_key||itemName),remark=String(input.remark||'').trim()
-    if(!itemName)return json({detail:'请填写团队积分事项'},400)
-    if(category==='特殊调整'&&!remark)return json({detail:'团队特殊调整必须填写调整原因'},400)
+    if(!itemName)return json({detail:'请填写小组积分事项'},400)
+    if(category==='特殊调整'&&!remark)return json({detail:'小组特殊调整必须填写调整原因'},400)
     if(category!=='特殊调整'&&await one("SELECT id FROM team_points WHERE group_id=$1 AND project_id=$2 AND COALESCE(phase_id,0)=COALESCE($3,0) AND category=$4 AND task_key=$5 AND status IN ('有效','active') LIMIT 1",[groupId,projectId,phaseId,category,taskKey]))return json({detail:'同一任务、同一小组只能计分一次'},409)
     if(category==='阶段案例评优'&&await one("SELECT id FROM team_points WHERE project_id=$1 AND phase_id=$2 AND category='阶段案例评优' AND task_key=$3 AND status IN ('有效','active') LIMIT 1",[projectId,phaseId,taskKey]))return json({detail:'同一阶段的同一案例评优只能有一个第一名小组'},409)
     let record=await one(`INSERT INTO team_points(record_number,group_id,admin_id,year_id,project_id,phase_id,points,category,item_name,task_key,data_source,source_note,remark,status,obtained_date)
@@ -742,10 +742,10 @@ async function adminExtendedRoutes(request, pathname, url) {
   }
   const teamPointDelete=pathname.match(/^\/api\/admin\/team-points\/(\d+)$/);if(teamPointDelete&&request.method==='DELETE'){
     const id=Number(teamPointDelete[1]),record=await one('SELECT project_id,phase_id,category,task_key FROM team_points WHERE id=$1',[id])
-    if(!record)return json({detail:'团队积分记录不存在'},404)
+    if(!record)return json({detail:'小组积分记录不存在'},404)
     await rows('DELETE FROM team_points WHERE id=$1',[id])
     await recalculateTeamSubmissionScores(record.project_id,record.phase_id,record.category,record.task_key)
-    return json({message:'团队积分已删除'})
+    return json({message:'小组积分已删除'})
   }
   if ((pathname === '/api/admin/points/batch'||pathname === '/api/admin/points/import')&&request.method==='POST') {
     const input=await body(request); const records=Array.isArray(input)?input:(input.records||[]); const result={created:0,errors:[]}

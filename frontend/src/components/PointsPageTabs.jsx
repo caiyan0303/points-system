@@ -5,13 +5,13 @@ export default function PointsPageTabs({ type }) {
   const location = useLocation()
   const basePath = type === 'team' ? '/admin/team-points' : '/admin/points'
   const tabs = [
+    { path: `${basePath}/summary`, label: type === 'team' ? '小组积分总表' : '学员积分总表', icon: Table2 },
     { path: basePath, label: '积分录入', icon: PlusCircle },
     { path: `${basePath}/records`, label: '积分流水', icon: ListChecks },
-    { path: `${basePath}/summary`, label: type === 'team' ? '小组积分总表' : '学员积分总表', icon: Table2 },
   ]
 
   return (
-    <div className="inline-flex rounded-xl bg-gray-100 p-1 mb-6" aria-label={type === 'team' ? '团队积分功能切换' : '个人积分功能切换'}>
+    <div className="inline-flex rounded-xl bg-gray-100 p-1 mb-6" aria-label={type === 'team' ? '小组积分功能切换' : '个人积分功能切换'}>
       {tabs.map(tab => {
         const active = location.pathname === tab.path
         const Icon = tab.icon

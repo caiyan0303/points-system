@@ -62,7 +62,7 @@ export default function StudentProjects() {
   if (loading) return <AppLayout><div className="flex h-72 items-center justify-center"><div className="h-10 w-10 animate-spin rounded-full border-2 border-indigo-200 border-b-indigo-600" /></div></AppLayout>
 
   return <AppLayout>
-    <div className="mb-7 flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><p className="text-xs font-bold uppercase tracking-[.22em] text-indigo-500">My Projects</p><h1 className="mt-2 text-3xl font-black text-slate-900">我的项目</h1><p className="mt-2 text-sm text-slate-500">以下是你参与的所有培养项目，选择项目进入专属积分空间。</p></div><div className="glass-chip flex items-center gap-2 rounded-2xl px-4 py-3"><Users className="h-5 w-5 text-indigo-600" /><div><p className="text-[10px] text-slate-400">当前团队</p><p className="text-sm font-black text-slate-800">{profile?.group_name || '暂未分组'}</p></div></div></div>
+    <div className="mb-7 flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><p className="text-xs font-bold uppercase tracking-[.22em] text-indigo-500">My Projects</p><h1 className="mt-2 text-3xl font-black text-slate-900">我的项目</h1><p className="mt-2 text-sm text-slate-500">以下是你参与的所有培养项目，选择项目进入专属积分空间。</p></div><div className="glass-chip flex items-center gap-2 rounded-2xl px-4 py-3"><Users className="h-5 w-5 text-indigo-600" /><div><p className="text-[10px] text-slate-400">当前小组</p><p className="text-sm font-black text-slate-800">{profile?.group_name || '暂未分组'}</p></div></div></div>
 
     {projects.length ? <div className="grid gap-5 md:grid-cols-2">{projects.map((project, index) => {
       const isCurrent = project.is_current || project.status === '进行中' || project.status === 'in_progress'

@@ -134,7 +134,7 @@ export default function AdminGroups() {
                   <p className="text-2xl font-bold text-gray-900">{groupDetail.member_count || 0}</p>
                 </div>
                 <div className="bg-white rounded-xl border border-gray-200 p-4 text-center">
-                  <p className="text-sm text-gray-500">团队最终得分</p>
+                  <p className="text-sm text-gray-500">小组最终得分</p>
                   <p className="text-2xl font-bold text-indigo-600">{groupDetail.total_points || 0}</p>
                 </div>
                 <div className="bg-white rounded-xl border border-gray-200 p-4 text-center">
@@ -280,8 +280,8 @@ export default function AdminGroups() {
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">年度 / 培训项目</th>
                       <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">成员</th>
                       <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">成员个人积分</th>
-                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">团队积分</th>
-                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">团队最终得分</th>
+                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">小组积分</th>
+                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">小组最终得分</th>
                       <th className="px-4 py-3 text-center text-xs font-medium text-gray-500">排名</th>
                       <th className="px-4 py-3 text-center text-xs font-medium text-gray-500">操作</th>
                     </tr>

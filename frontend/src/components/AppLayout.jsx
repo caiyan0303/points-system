@@ -16,8 +16,8 @@ const adminGroups = [
   ] },
   { key: 'points', label: '积分管理', icon: TrendingUp, items: [
     { path: '/admin/dashboard', icon: BarChart3, label: '项目积分看板' },
-    { path: '/admin/points', icon: PlusCircle, label: '个人积分' },
-    { path: '/admin/team-points', icon: UsersRound, label: '团队积分' },
+    { path: '/admin/points/summary', aliases: ['/admin/points'], icon: PlusCircle, label: '个人积分' },
+    { path: '/admin/team-points/summary', aliases: ['/admin/team-points'], icon: UsersRound, label: '小组积分' },
     { path: '/admin/point-rules', icon: ScrollText, label: '积分规则' },
   ] },
   { key: 'mall', label: '商城管理', icon: Store, items: [

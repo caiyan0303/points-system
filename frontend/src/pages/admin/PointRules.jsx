@@ -160,7 +160,7 @@ export default function AdminPointRules() {
               <tbody className="divide-y divide-gray-50">
                 {rules.map((r) => (
                   <tr key={r.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3"><span className={`text-xs px-2 py-1 rounded-full ${r.account_type === '团队' ? 'bg-orange-50 text-orange-600' : 'bg-indigo-50 text-indigo-600'}`}>{r.account_type || '个人'}</span></td>
+                    <td className="px-4 py-3"><span className={`text-xs px-2 py-1 rounded-full ${r.account_type === '团队' ? 'bg-orange-50 text-orange-600' : 'bg-indigo-50 text-indigo-600'}`}>{r.account_type === '团队' ? '小组' : r.account_type || '个人'}</span></td>
                     <td className="px-4 py-3 text-sm text-gray-700">{r.category || '-'}</td>
                     <td className="px-4 py-3 text-sm font-medium text-gray-900">{r.rule_name || r.name}</td>
                     <td className="px-4 py-3 text-sm font-semibold text-indigo-600 text-right">{r.default_points || 0}</td>
@@ -197,7 +197,7 @@ export default function AdminPointRules() {
               <div>
                 <label className="block text-sm text-gray-600 mb-1">计分对象</label>
                 <select value={form.account_type} onChange={(e) => setForm({...form, account_type: e.target.value, category: e.target.value === '团队' ? '线上案例沟通' : '线上学习', count_in_available: e.target.value !== '团队'})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm">
-                  <option value="个人">个人积分</option><option value="团队">团队积分</option>
+                  <option value="个人">个人积分</option><option value="团队">小组积分</option>
                 </select>
               </div>
               <div>
@@ -255,7 +255,7 @@ export default function AdminPointRules() {
                 </label>
                 <label className="flex items-center gap-2 text-sm">
                   <input type="checkbox" disabled={form.account_type === '团队'} checked={form.account_type === '团队' ? false : form.count_in_available} onChange={(e) => setForm({...form, count_in_available: e.target.checked})} className="rounded" />
-                  计入可兑换积分（团队积分不可兑换）
+                  计入可兑换积分（小组积分不可兑换）
                 </label>
                 <label className="flex items-center gap-2 text-sm">
                   <input type="checkbox" checked={form.need_approval} onChange={(e) => setForm({...form, need_approval: e.target.checked})} className="rounded" />

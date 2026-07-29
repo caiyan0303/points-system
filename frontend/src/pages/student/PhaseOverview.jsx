@@ -98,7 +98,7 @@ export default function StudentPhaseOverview() {
                 <div className="border-t border-gray-100 p-5 bg-gray-50/50">
                   {phaseDetails[p.phase_id].loading && (
                     <div className="mb-4 rounded-lg border border-indigo-100 bg-indigo-50 px-4 py-3 text-sm text-indigo-600">
-                      正在同步最新个人积分和团队积分…
+                      正在同步最新个人积分和小组积分…
                     </div>
                   )}
                   {phaseDetails[p.phase_id].load_error && (
@@ -143,7 +143,7 @@ export default function StudentPhaseOverview() {
                       <h4 className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-2"><Trophy className="w-4 h-4 text-orange-500" />小组积分排名</h4>
                       <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
                         <table className="w-full text-sm">
-                          <thead><tr className="border-b bg-gray-50"><th className="px-3 py-2 text-left text-xs text-gray-500">排名</th><th className="px-3 py-2 text-left text-xs text-gray-500">小组</th><th className="px-3 py-2 text-right text-xs text-gray-500">成员个人积分</th><th className="px-3 py-2 text-right text-xs text-gray-500">团队积分</th><th className="px-3 py-2 text-right text-xs text-gray-500">最终得分</th></tr></thead>
+                          <thead><tr className="border-b bg-gray-50"><th className="px-3 py-2 text-left text-xs text-gray-500">排名</th><th className="px-3 py-2 text-left text-xs text-gray-500">小组</th><th className="px-3 py-2 text-right text-xs text-gray-500">成员个人积分</th><th className="px-3 py-2 text-right text-xs text-gray-500">小组积分</th><th className="px-3 py-2 text-right text-xs text-gray-500">最终得分</th></tr></thead>
                           <tbody>
                             {(phaseDetails[p.phase_id].group_rankings || []).map((r) => (
                               <tr key={r.group_id} className={`border-b border-gray-50 last:border-0 ${r.is_my_group ? 'bg-orange-50' : ''}`}>

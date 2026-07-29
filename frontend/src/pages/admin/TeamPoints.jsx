@@ -66,16 +66,16 @@ export default function AdminTeamPoints() {
     setSubmitting(true)
     try {
       await api.post('/api/admin/team-points', { ...form, year_id: Number(form.year_id), project_id: Number(form.project_id), phase_id: form.phase_id ? Number(form.phase_id) : null, group_id: Number(form.group_id), points: Number(form.points), task_key: form.item_name })
-      showToast('团队积分已录入，小组排名已自动更新')
+      showToast('小组积分已录入，小组排名已自动更新')
       setForm(current => ({ ...current, item_name: '', source_note: '', remark: '' }))
-    } catch (err) { showToast(err.response?.data?.detail || '团队积分录入失败', 'error') }
+    } catch (err) { showToast(err.response?.data?.detail || '小组积分录入失败', 'error') }
     finally { setSubmitting(false) }
   }
 
   const downloadTemplate = () => {
     const link = document.createElement('a')
     link.href = '/templates/优才计划团队积分批量导入模板.xlsx'
-    link.download = '优才计划团队积分批量导入模板.xlsx'
+    link.download = '优才计划小组积分批量导入模板.xlsx'
     document.body.appendChild(link)
     link.click()
     link.remove()
@@ -87,7 +87,7 @@ export default function AdminTeamPoints() {
     if (!file) return
     try {
       const workbook = XLSX.read(await file.arrayBuffer(), { cellDates: false })
-      const sheet = workbook.Sheets['团队积分导入'] || workbook.Sheets[workbook.SheetNames[0]]
+      const sheet = workbook.Sheets['小组积分导入'] || workbook.Sheets['团队积分导入'] || workbook.Sheets[workbook.SheetNames[0]]
       const sourceRows = XLSX.utils.sheet_to_json(sheet, { defval: '', raw: true })
       const valid = []
       const errors = []
@@ -99,7 +99,7 @@ export default function AdminTeamPoints() {
         const groupName = textValue(row['小组名称'] ?? row['计分小组'] ?? row['小组'])
         const category = textValue(row['积分类别'])
         const itemName = textValue(row['积分事项'])
-        const rawPoints = row['积分值'] ?? row['团队积分']
+        const rawPoints = row['积分值'] ?? row['小组积分'] ?? row['团队积分']
         const points = Number(rawPoints)
         const obtainedDate = excelDate(row['获得日期'] ?? row['获得时间'])
         if (![yearName, projectName, phaseName, groupName, category, itemName, textValue(rawPoints)].some(Boolean)) return
@@ -149,18 +149,18 @@ export default function AdminTeamPoints() {
     }
   }
 
-  if (!scopeProjectId) return <AppLayout><div className="rounded-3xl border border-dashed border-indigo-200 bg-white p-16 text-center"><UsersRound className="mx-auto h-10 w-10 text-indigo-300" /><h2 className="mt-4 text-xl font-black text-slate-800">请先选择年度和培训项目</h2><p className="mt-2 text-sm text-slate-500">选择项目后才能录入团队积分。</p></div></AppLayout>
+  if (!scopeProjectId) return <AppLayout><div className="rounded-3xl border border-dashed border-indigo-200 bg-white p-16 text-center"><UsersRound className="mx-auto h-10 w-10 text-indigo-300" /><h2 className="mt-4 text-xl font-black text-slate-800">请先选择年度和培训项目</h2><p className="mt-2 text-sm text-slate-500">选择项目后才能录入小组积分。</p></div></AppLayout>
 
   return <AppLayout>
     <Toast message={toast?.msg} type={toast?.type} onClose={() => setToast(null)} />
     <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">团队积分 · {selectedProject?.name}</h1>
+        <h1 className="text-2xl font-bold text-gray-900">小组积分 · {selectedProject?.name}</h1>
         <p className="text-gray-500 mt-1">当前页面的录入和导入仅写入已选择的培训项目</p>
     </div>
     <PointsPageTabs type="team" />
     <div className="bg-white rounded-xl border border-gray-200 p-6 mb-6">
       <div className="flex items-center justify-between gap-4 mb-5">
-        <div className="flex items-center gap-2"><UsersRound className="w-5 h-5 text-indigo-600" /><h2 className="font-semibold">录入团队积分</h2></div>
+        <div className="flex items-center gap-2"><UsersRound className="w-5 h-5 text-indigo-600" /><h2 className="font-semibold">录入小组积分</h2></div>
         <div className="flex items-center gap-2">
           <button onClick={downloadTemplate} className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-300 text-sm text-gray-700 hover:bg-gray-50"><Download className="w-4 h-4" /> 下载批量导入模板</button>
           <label className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-emerald-600 text-white text-sm cursor-pointer hover:bg-emerald-700"><Upload className="w-4 h-4" /> Excel批量导入<input type="file" accept=".xlsx,.xls" onChange={readImportFile} className="hidden" /></label>
@@ -180,12 +180,12 @@ export default function AdminTeamPoints() {
         <label className="text-sm text-gray-600">来源说明<input value={form.source_note} onChange={e => setForm({ ...form, source_note: e.target.value })} placeholder="例如：问卷星提交时间" className="mt-1 w-full px-3 py-2 border rounded-lg" /></label>
         <label className="text-sm text-gray-600 col-span-2">备注 / 调整原因<textarea value={form.remark} onChange={e => setForm({ ...form, remark: e.target.value })} rows={2} className="mt-1 w-full px-3 py-2 border rounded-lg" /></label>
       </div>
-      <div className="mt-5 flex justify-end"><button disabled={submitting} onClick={submit} className="px-5 py-2.5 rounded-lg bg-indigo-600 text-white text-sm font-medium disabled:opacity-50">{submitting ? '录入中…' : '确认录入团队积分'}</button></div>
+      <div className="mt-5 flex justify-end"><button disabled={submitting} onClick={submit} className="px-5 py-2.5 rounded-lg bg-indigo-600 text-white text-sm font-medium disabled:opacity-50">{submitting ? '录入中…' : '确认录入小组积分'}</button></div>
     </div>
     {importPreview && <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
       <div className="bg-white rounded-xl shadow-xl w-full max-w-3xl max-h-[85vh] overflow-hidden flex flex-col">
         <div className="px-6 py-4 border-b flex items-center justify-between">
-          <div><h2 className="font-semibold flex items-center gap-2"><FileSpreadsheet className="w-5 h-5 text-emerald-600" /> 团队积分导入预览</h2><p className="text-xs text-gray-500 mt-1">{importPreview.fileName}</p></div>
+          <div><h2 className="font-semibold flex items-center gap-2"><FileSpreadsheet className="w-5 h-5 text-emerald-600" /> 小组积分导入预览</h2><p className="text-xs text-gray-500 mt-1">{importPreview.fileName}</p></div>
           <button onClick={() => setImportPreview(null)} className="p-1.5 rounded hover:bg-gray-100"><X className="w-5 h-5" /></button>
         </div>
         <div className="p-6 overflow-y-auto">

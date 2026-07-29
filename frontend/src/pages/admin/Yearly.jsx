@@ -74,7 +74,7 @@ export default function AdminYearly() {
             <SummaryCard icon={FolderKanban} label="已归档项目" value={totals.projects} tone="indigo" />
             <SummaryCard icon={Users} label="覆盖学员" value={totals.students} tone="blue" />
             <SummaryCard icon={TrendingUp} label="累计获得积分" value={number(totals.earned)} tone="green" />
-            <SummaryCard icon={Layers} label="累计团队积分" value={number(totals.team)} tone="indigo" />
+            <SummaryCard icon={Layers} label="累计小组积分" value={number(totals.team)} tone="indigo" />
             <SummaryCard icon={Gift} label="兑换申请" value={totals.redemptions} tone="orange" />
           </div>
 
@@ -102,7 +102,7 @@ export default function AdminYearly() {
                       <CompactMetric label="小组" value={year.group_count} />
                       <CompactMetric label="阶段" value={year.phase_count} />
                       <CompactMetric label="获得积分" value={number(year.earned_points)} accent />
-                      <CompactMetric label="团队积分" value={number(year.team_points)} />
+                      <CompactMetric label="小组积分" value={number(year.team_points)} />
                       <CompactMetric label="兑换积分" value={number(year.redeemed_points)} />
                     </div>
                   </button>
@@ -116,8 +116,8 @@ export default function AdminYearly() {
                         <DetailMetric icon={Gift} label="兑换次数" value={number(year.redemption_count)} color="text-orange-600" />
                         <DetailMetric icon={Award} label="奖励发放" value={number(year.award_count)} color="text-yellow-600" />
                         <DetailMetric icon={Layers} label="净积分" value={number(year.net_points)} color="text-blue-600" />
-                        <DetailMetric icon={Users} label="团队积分" value={number(year.team_points)} color="text-orange-600" />
-                        <DetailMetric icon={Award} label="团队最终得分" value={number(year.team_final_score)} color="text-green-600" />
+                        <DetailMetric icon={Users} label="小组积分" value={number(year.team_points)} color="text-orange-600" />
+                        <DetailMetric icon={Award} label="小组最终得分" value={number(year.team_final_score)} color="text-green-600" />
                       </div>
 
                       <div className="grid grid-cols-2 gap-5">
@@ -149,7 +149,7 @@ export default function AdminYearly() {
                               <div key={project.id} className="p-3 rounded-lg border border-gray-100 bg-gray-50">
                                 <div className="flex items-center justify-between mb-2">
                                   <span className="text-sm font-medium text-gray-900">{project.name}</span>
-                                  <span className="text-sm font-semibold text-indigo-600">个人 {number(project.earned_points)} / 团队 {number(project.team_points)} 分</span>
+                                  <span className="text-sm font-semibold text-indigo-600">个人 {number(project.earned_points)} / 小组 {number(project.team_points)} 分</span>
                                 </div>
                                 <div className="grid grid-cols-4 gap-2 text-xs text-gray-500">
                                   <span>{project.student_count} 学员</span>
