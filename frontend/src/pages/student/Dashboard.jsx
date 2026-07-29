@@ -5,7 +5,7 @@ import AppLayout from '../../components/AppLayout'
 import { ArrowRight, Award, Crown, Gift, ShoppingBag, Sparkles, TrendingUp, Trophy, Users } from 'lucide-react'
 
 const rankStyle = [
-  'bg-amber-100 text-amber-700 ring-amber-200',
+  'bg-violet-100 text-violet-700 ring-violet-200',
   'bg-slate-200 text-slate-600 ring-slate-300',
   'bg-orange-100 text-orange-700 ring-orange-200',
 ]
@@ -15,6 +15,7 @@ export default function StudentDashboard() {
   const [data, setData] = useState(null)
   const [phases, setPhases] = useState([])
   const [phaseDetail, setPhaseDetail] = useState(null)
+  const [selectedPhaseId, setSelectedPhaseId] = useState('')
   const [teamData, setTeamData] = useState(null)
   const [rankingTab, setRankingTab] = useState('personal')
   const [activityTab, setActivityTab] = useState('personal')
@@ -28,7 +29,7 @@ export default function StudentDashboard() {
       api.get('/api/student/phase-overview'),
       api.get('/api/student/team'),
       api.get('/api/common/projects'),
-    ]).then(async ([dashboardRes, phaseRes, teamRes, projectRes]) => {
+    ]).then(([dashboardRes, phaseRes, teamRes, projectRes]) => {
       const nextPhases = phaseRes.data?.phases || []
       setData(dashboardRes.data)
       setPhases(nextPhases)
@@ -38,15 +39,28 @@ export default function StudentDashboard() {
       setCurrentProjectId(selectedProject?.id || null)
       const current = nextPhases.find((item) => ['进行中', 'in_progress'].includes(item.status)) || nextPhases[0]
       if (current?.phase_id) {
-        const detail = await api.get(`/api/student/phases/${current.phase_id}`)
-        setPhaseDetail(detail.data)
+        setSelectedPhaseId(String(current.phase_id))
       }
     }).catch((err) => setError(err.response?.data?.detail || '积分驾驶舱加载失败')).finally(() => setLoading(false))
   }, [])
 
+  useEffect(() => {
+    if (!selectedPhaseId) return
+    let active = true
+    api.get(`/api/student/phases/${selectedPhaseId}`)
+      .then((res) => {
+        if (active) setPhaseDetail(res.data)
+      })
+      .catch(() => {
+        if (active) setPhaseDetail(null)
+      })
+    return () => { active = false }
+  }, [selectedPhaseId])
+
   const personalTop = useMemo(() => (phaseDetail?.personal_rankings || phaseDetail?.rankings || []).slice(0, 3), [phaseDetail])
   const teamTop = useMemo(() => (teamData?.all_groups || phaseDetail?.group_rankings || []).slice(0, 3), [teamData, phaseDetail])
   const currentPhase = phases.find((item) => ['进行中', 'in_progress'].includes(item.status)) || phases[0]
+  const selectedPhase = phases.find((item) => String(item.phase_id) === selectedPhaseId) || currentPhase
   const rankingRows = rankingTab === 'personal' ? personalTop : teamTop
   const personalActivities = data?.recent_points || []
   const teamActivities = teamData?.team_point_records || []
@@ -86,11 +100,24 @@ export default function StudentDashboard() {
           <button onClick={() => setRankingTab('team')} className={`relative z-10 flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-black transition ${rankingTab === 'team' ? 'text-violet-700' : 'text-slate-400'}`}><Users className="h-4 w-4" />团队榜</button>
         </div>
         <div className="p-6">
-          <div className="mb-4 flex items-center justify-between"><p className="text-xs font-semibold text-slate-400">{rankingTab === 'personal' ? currentPhase?.phase_name || '当前阶段' : '团队最终得分排名'}</p>{rankingRows[0] && <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-bold text-amber-600"><Crown className="h-3 w-3" />{rankingTab === 'personal' ? '阶段冠军' : '团队冠军'}</span>}</div>
-          {rankingRows.length ? <div className="space-y-2">{rankingRows.map((item, index) => {
+          <div className="mb-4 flex items-center justify-between gap-3">
+            {rankingTab === 'personal' ? <label className="flex min-w-0 items-center gap-2 text-xs font-semibold text-slate-400">
+              <span className="shrink-0">查看阶段</span>
+              <select value={selectedPhaseId} onChange={(event) => setSelectedPhaseId(event.target.value)} className="min-w-0 rounded-xl border border-violet-100 bg-white/80 px-3 py-2 text-xs font-bold text-violet-700 outline-none transition focus:border-violet-300 focus:ring-2 focus:ring-violet-100">
+                {phases.map((phase) => <option key={phase.phase_id} value={String(phase.phase_id)}>{phase.phase_name}{String(phase.phase_id) === String(currentPhase?.phase_id) ? '（当前）' : ''}</option>)}
+              </select>
+            </label> : <p className="text-xs font-semibold text-slate-400">团队最终得分排名</p>}
+            {rankingRows[0] && <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-violet-100 px-2.5 py-1 text-[10px] font-black text-violet-700"><Crown className="h-3 w-3" />{rankingTab === 'personal' ? `${selectedPhase?.phase_name || '当前阶段'}冠军` : '团队冠军'}</span>}
+          </div>
+          {rankingRows.length ? <div className="space-y-3">{rankingRows.map((item, index) => {
             const name = rankingTab === 'personal' ? item.student_name : item.name || item.group_name
             const points = rankingTab === 'personal' ? item.total_points || 0 : item.final_score ?? item.total_points ?? 0
-            return <div key={item.student_id || item.id || item.group_id} className={`flex items-center gap-4 rounded-2xl px-4 py-3.5 transition ${index === 0 ? 'bg-gradient-to-r from-amber-50 to-yellow-50/60 ring-1 ring-amber-100' : item.is_me || item.is_my_group ? 'bg-indigo-50/80' : 'bg-white/55'}`}><span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-black ring-1 ${rankStyle[index] || 'bg-slate-100 text-slate-500 ring-slate-200'}`}>{index + 1}</span><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-100 to-violet-100 font-black text-indigo-700">{rankingTab === 'personal' ? name?.slice(-1) : <Users className="h-5 w-5" />}</span><div className="min-w-0 flex-1"><p className="truncate text-sm font-black text-slate-800">{name}{(item.is_me || item.is_my_group) && <span className="ml-2 text-[10px] font-bold text-indigo-500">我的位置</span>}</p><p className="mt-0.5 text-[11px] text-slate-400">{rankingTab === 'personal' ? item.group_name || '暂未分组' : `${item.member_count || 0} 名成员`}</p></div><strong className="text-base font-black text-indigo-600">{points} 分</strong></div>
+            if (index === 0) return <div key={item.student_id || item.id || item.group_id} className="relative overflow-hidden rounded-[24px] bg-gradient-to-r from-violet-700 via-indigo-600 to-fuchsia-600 p-5 text-white shadow-xl shadow-violet-300/35 ring-1 ring-violet-400/30">
+              <div className="absolute -right-8 -top-12 h-36 w-36 rounded-full bg-white/20 blur-2xl" />
+              <div className="absolute bottom-0 left-1/3 h-16 w-32 rounded-full bg-fuchsia-300/20 blur-2xl" />
+              <div className="relative flex items-center gap-4"><div className="relative flex h-16 w-16 shrink-0 items-center justify-center rounded-[22px] border border-white/30 bg-white/15 text-2xl font-black shadow-lg backdrop-blur"><Crown className="absolute -right-2 -top-3 h-7 w-7 rotate-12 fill-violet-100 text-violet-100 drop-shadow" />{rankingTab === 'personal' ? name?.slice(-1) : <Users className="h-8 w-8" />}</div><div className="min-w-0 flex-1"><span className="inline-flex rounded-full bg-white/15 px-2.5 py-1 text-[10px] font-black tracking-wide text-violet-50">NO.1 · {rankingTab === 'personal' ? '阶段冠军' : '团队冠军'}</span><p className="mt-2 truncate text-xl font-black">{name}{(item.is_me || item.is_my_group) && <span className="ml-2 text-[10px] text-violet-100">我的位置</span>}</p><p className="mt-1 text-xs text-violet-100">{rankingTab === 'personal' ? item.group_name || '暂未分组' : `${item.member_count || 0} 名成员`}</p></div><div className="shrink-0 text-right"><strong className="text-3xl font-black tracking-tight">{points}</strong><span className="ml-1 text-xs font-bold text-violet-100">分</span></div></div>
+            </div>
+            return <div key={item.student_id || item.id || item.group_id} className={`flex items-center gap-4 rounded-2xl px-4 py-3.5 transition ${item.is_me || item.is_my_group ? 'bg-indigo-50/80' : 'bg-white/55'}`}><span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-black ring-1 ${rankStyle[index] || 'bg-slate-100 text-slate-500 ring-slate-200'}`}>{index + 1}</span><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-100 to-violet-100 font-black text-indigo-700">{rankingTab === 'personal' ? name?.slice(-1) : <Users className="h-5 w-5" />}</span><div className="min-w-0 flex-1"><p className="truncate text-sm font-black text-slate-800">{name}{(item.is_me || item.is_my_group) && <span className="ml-2 text-[10px] font-bold text-indigo-500">我的位置</span>}</p><p className="mt-0.5 text-[11px] text-slate-400">{rankingTab === 'personal' ? item.group_name || '暂未分组' : `${item.member_count || 0} 名成员`}</p></div><strong className="text-base font-black text-indigo-600">{points} 分</strong></div>
           })}</div> : <p className="py-12 text-center text-sm text-slate-400">暂无排名数据</p>}
         </div>
       </div>
