@@ -778,7 +778,19 @@ async function adminExtendedRoutes(request, pathname, url) {
 
   const productDelete=pathname.match(/^\/api\/admin\/products\/(\d+)$/);if(productDelete&&request.method==='DELETE'){const id=Number(productDelete[1]);if(await one('SELECT id FROM redemptions WHERE product_id=$1 LIMIT 1',[id]))return json({detail:'商品已有兑换记录，不能删除'},400);await rows('DELETE FROM products WHERE id=$1',[id]);return json({message:'商品已删除'})}
 
-  if(pathname==='/api/admin/redemptions'&&request.method==='GET'){const {page,pageSize,offset}=pageInfo(url);const status=url.searchParams.get('status')||'',keyword=url.searchParams.get('keyword')||'';const args=[status,`%${keyword}%`];const where="($1='' OR r.status=$1) AND ($2='%%' OR u.real_name ILIKE $2 OR p.name ILIKE $2 OR r.tracking_number ILIKE $2)";const total=Number((await one(`SELECT COUNT(*)::int AS total FROM redemptions r JOIN users u ON u.id=r.student_id JOIN products p ON p.id=r.product_id WHERE ${where}`,args)).total);const items=await rows(`SELECT r.*,u.real_name AS student_name,u.phone,p.name AS product_name,p.image_url FROM redemptions r JOIN users u ON u.id=r.student_id JOIN products p ON p.id=r.product_id WHERE ${where} ORDER BY r.id DESC LIMIT $3 OFFSET $4`,[...args,pageSize,offset]);return json({items,total,page,page_size:pageSize,total_pages:Math.max(1,Math.ceil(total/pageSize))})}
+  if(pathname==='/api/admin/redemptions'&&request.method==='GET'){
+    const {page,pageSize,offset}=pageInfo(url),status=url.searchParams.get('status')||'',keyword=url.searchParams.get('keyword')||''
+    const statusGroups={
+      '已通过':['已通过','待发货','已发货','待领取','已领取','已完成'],
+      '已取消':['已取消','已拒绝'],
+    }
+    const selectedStatuses=statusGroups[status]||[status]
+    const args=[selectedStatuses,`%${keyword}%`,status]
+    const where="($3='' OR r.status=ANY($1::text[])) AND ($2='%%' OR u.real_name ILIKE $2 OR p.name ILIKE $2)"
+    const total=Number((await one(`SELECT COUNT(*)::int AS total FROM redemptions r JOIN users u ON u.id=r.student_id JOIN products p ON p.id=r.product_id WHERE ${where}`,args)).total)
+    const items=await rows(`SELECT r.*,u.real_name AS student_name,p.name AS product_name,p.image_url FROM redemptions r JOIN users u ON u.id=r.student_id JOIN products p ON p.id=r.product_id WHERE ${where} ORDER BY r.id DESC LIMIT $4 OFFSET $5`,[...args,pageSize,offset])
+    return json({items,total,page,page_size:pageSize,total_pages:Math.max(1,Math.ceil(total/pageSize))})
+  }
   const redemptionStatus=pathname.match(/^\/api\/admin\/redemptions\/(\d+)\/status$/)
   if(redemptionStatus&&request.method==='PUT'){
     const id=Number(redemptionStatus[1]),i=await body(request)

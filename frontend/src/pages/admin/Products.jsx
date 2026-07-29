@@ -31,7 +31,7 @@ export default function AdminProducts() {
   const [uploading, setUploading] = useState(false)
   const [form, setForm] = useState({
     name: '', description: '', image_url: '', points_required: '', total_stock: '',
-    on_site_stock: '0', limit_per_person: '', is_limited: false,
+    limit_per_person: '', is_limited: false,
     on_sale_time: '', off_sale_time: ''
   })
 
@@ -48,7 +48,7 @@ export default function AdminProducts() {
 
   const openCreate = () => {
     setModal('create')
-    setForm({ name: '', description: '', image_url: '', points_required: '', total_stock: '', on_site_stock: '0', limit_per_person: '', is_limited: false, on_sale_time: '', off_sale_time: '' })
+    setForm({ name: '', description: '', image_url: '', points_required: '', total_stock: '', limit_per_person: '', is_limited: false, on_sale_time: '', off_sale_time: '' })
   }
 
   const openEdit = (p) => {
@@ -56,7 +56,7 @@ export default function AdminProducts() {
     setForm({
       id: p.id, name: p.name, description: p.description || '', image_url: p.image_url || '',
       points_required: p.points_required, total_stock: p.total_stock,
-      on_site_stock: p.on_site_stock || 0, limit_per_person: p.limit_per_person || '',
+      limit_per_person: p.limit_per_person || '',
       is_limited: !!p.limit_per_person, on_sale_time: p.on_sale_time || '', off_sale_time: p.off_sale_time || ''
     })
   }
@@ -65,12 +65,10 @@ export default function AdminProducts() {
     try {
       const pointsRequired = Number(form.points_required)
       const totalStock = Number(form.total_stock)
-      const onSiteStock = Number(form.on_site_stock || 0)
       const limitPerPerson = form.is_limited ? Number(form.limit_per_person) : null
       if (!form.name.trim()) return showToast('请输入商品名称', 'error')
       if (!Number.isInteger(pointsRequired) || pointsRequired <= 0) return showToast('所需积分必须为正整数', 'error')
       if (!Number.isInteger(totalStock) || totalStock < 0) return showToast('总库存不能小于 0', 'error')
-      if (!Number.isInteger(onSiteStock) || onSiteStock < 0 || onSiteStock > totalStock) return showToast('现场库存需在 0 到总库存之间', 'error')
       if (form.is_limited && (!Number.isInteger(limitPerPerson) || limitPerPerson <= 0)) return showToast('请输入有效的限兑次数', 'error')
 
       const payload = {
@@ -79,7 +77,7 @@ export default function AdminProducts() {
         image_url: form.image_url || null,
         points_required: pointsRequired,
         total_stock: totalStock,
-        on_site_stock: onSiteStock,
+        on_site_stock: 0,
         limit_per_person: limitPerPerson,
         is_limited: form.is_limited ? 1 : 0,
         on_sale_time: form.on_sale_time || null,
@@ -183,8 +181,7 @@ export default function AdminProducts() {
                   <span className="text-gray-500">库存</span>
                   <span className="text-gray-700">
                     <span className="text-gray-900 font-medium">{p.available_stock ?? (p.total_stock - (p.locked_stock || 0))}</span>
-                    {p.on_site_stock > 0 && <span className="text-xs text-gray-400 ml-1">/ {p.total_stock} (现场{p.on_site_stock})</span>}
-                    {p.on_site_stock <= 0 && <span className="text-xs text-gray-400 ml-1">/ {p.total_stock}</span>}
+                    <span className="text-xs text-gray-400 ml-1">/ {p.total_stock}</span>
                   </span>
                 </div>
                 {p.limit_per_person && (
@@ -257,10 +254,6 @@ export default function AdminProducts() {
                   <label className="block text-sm text-gray-600 mb-1">总库存 *</label>
                   <input type="number" value={form.total_stock} onChange={(e) => setForm({...form, total_stock: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500" />
                 </div>
-              </div>
-              <div>
-                <label className="block text-sm text-gray-600 mb-1">现场库存</label>
-                <input type="number" value={form.on_site_stock} onChange={(e) => setForm({...form, on_site_stock: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500" />
               </div>
               <div>
                 <label className="flex items-center gap-2 text-sm mb-2">

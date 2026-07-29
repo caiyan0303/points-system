@@ -3,18 +3,16 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { useAdminScope } from '../contexts/AdminScopeContext'
 import {
-  Calendar, ChevronDown, ClipboardCheck, FileText, Gift,
+  Calendar, ChevronDown, ClipboardCheck, FileText,
   LayoutDashboard, LogOut, Menu, Package, PlusCircle, ScrollText,
   ShoppingBag, Sparkles, TrendingUp, User, UsersRound, X,
-  Layers, FolderKanban, Trophy, Database, Store, BarChart3,
+  FolderKanban, Trophy, Database, Store, BarChart3,
 } from 'lucide-react'
 
 const adminGroups = [
   { key: 'information', label: '信息管理', icon: Database, items: [
     { path: '/admin/projects', icon: FolderKanban, label: '年度与项目' },
-    { path: '/admin/phases', icon: Layers, label: '阶段管理' },
-    { path: '/admin/students', icon: User, label: '学员管理' },
-    { path: '/admin/groups', icon: UsersRound, label: '小组管理' },
+    { path: '/admin/students', aliases: ['/admin/groups'], icon: User, label: '学员与小组' },
   ] },
   { key: 'points', label: '积分管理', icon: TrendingUp, items: [
     { path: '/admin/dashboard', icon: BarChart3, label: '项目积分看板' },
@@ -25,7 +23,6 @@ const adminGroups = [
   { key: 'mall', label: '商城管理', icon: Store, items: [
     { path: '/admin/products', icon: Package, label: '商品管理' },
     { path: '/admin/redemptions', icon: ClipboardCheck, label: '兑换审核' },
-    { path: '/admin/on-site', icon: Gift, label: '现场发放' },
   ] },
 ]
 
@@ -37,14 +34,15 @@ const studentNav = [
 ]
 
 function SidebarGroup({ group, location }) {
-  const hasActive = group.items.some((item) => location.pathname === item.path || location.pathname.startsWith(`${item.path}/`))
+  const isItemActive = (item) => location.pathname === item.path || location.pathname.startsWith(`${item.path}/`) || item.aliases?.some((path) => location.pathname === path || location.pathname.startsWith(`${path}/`))
+  const hasActive = group.items.some(isItemActive)
   const [open, setOpen] = useState(hasActive)
   return <div>
     <button onClick={() => setOpen(!open)} className="w-full flex items-center gap-2 px-3 py-2 text-xs font-black tracking-wider text-indigo-200 hover:text-white">
       <group.icon className="w-3.5 h-3.5" />{group.label}<ChevronDown className={`w-3 h-3 ml-auto transition-transform ${open ? '' : '-rotate-90'}`} />
     </button>
     {open && <div className="space-y-0.5 mt-0.5 mb-2">{group.items.map((item) => {
-      const active = location.pathname === item.path || location.pathname.startsWith(`${item.path}/`)
+      const active = isItemActive(item)
       return <Link key={item.path} to={item.path} className={`flex items-center gap-3 pl-7 pr-3 py-2.5 rounded-xl text-sm font-semibold transition ${active ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-lg shadow-indigo-950/30' : 'text-indigo-100/70 hover:bg-white/10 hover:text-white'}`}>
         <item.icon className="w-3.5 h-3.5" />{item.label}
       </Link>
@@ -57,7 +55,7 @@ function AdminLayout({ children, user, logout }) {
   const navigate = useNavigate()
   const { years, visibleProjects, yearId, projectId, setYearId, setProjectId, selectedProject, loading } = useAdminScope()
   const handleLogout = () => { logout(); navigate('/login') }
-  const mallPage = ['/admin/products', '/admin/redemptions', '/admin/on-site'].some((path) => location.pathname.startsWith(path))
+  const mallPage = ['/admin/products', '/admin/redemptions'].some((path) => location.pathname.startsWith(path))
   return <div className="min-h-screen bg-[#f4f6ff] flex text-slate-900">
     <aside className="w-64 bg-gradient-to-b from-[#121d46] via-[#111b3e] to-[#0b1330] text-white flex flex-col fixed inset-y-0 left-0 z-30 shadow-2xl shadow-indigo-950/20">
       <div className="p-5 border-b border-white/10"><Link to="/admin/dashboard" className="flex items-center gap-3"><div className="relative flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 via-violet-500 to-cyan-400 shadow-lg shadow-indigo-950/30"><Trophy className="h-5 w-5 text-white" /><span className="absolute -right-1 -top-1 h-3 w-3 rounded-full border-2 border-[#121d46] bg-amber-400" /></div><div><h1 className="font-black text-sm tracking-wide">优才项目积分管理系统</h1><p className="mt-0.5 text-[10px] uppercase tracking-[.2em] text-indigo-300">管理端</p></div></Link></div>

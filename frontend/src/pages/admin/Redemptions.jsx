@@ -9,24 +9,19 @@ const STATUSES = [
   { key: '', label: '全部' },
   { key: '待审核', label: '待审核' },
   { key: '已通过', label: '已通过' },
-  { key: '已拒绝', label: '已拒绝' },
-  { key: '已发货', label: '已发货' },
-  { key: '已领取', label: '已领取' },
   { key: '已取消', label: '已取消' },
-  { key: '已完成', label: '已完成' },
 ]
 
 const STATUS_COLORS = {
   '待审核': 'bg-yellow-50 text-yellow-700 border-yellow-200',
   '已通过': 'bg-blue-50 text-blue-700 border-blue-200',
-  '已拒绝': 'bg-red-50 text-red-600 border-red-200',
-  '已发货': 'bg-purple-50 text-purple-700 border-purple-200',
-  '已领取': 'bg-emerald-50 text-emerald-700 border-emerald-200',
   '已取消': 'bg-gray-100 text-gray-600 border-gray-200',
-  '已完成': 'bg-green-50 text-green-700 border-green-200',
 }
 
-const LEGACY_STATUS = { '待发货': '已通过', '待领取': '已发货' }
+const LEGACY_STATUS = {
+  '待发货': '已通过', '已发货': '已通过', '待领取': '已通过', '已领取': '已通过', '已完成': '已通过',
+  '已拒绝': '已取消',
+}
 const normalizeStatus = (value) => LEGACY_STATUS[value] || value
 
 export default function AdminRedemptions() {
@@ -78,16 +73,6 @@ export default function AdminRedemptions() {
 
   const handleStatusChange = (redemption, nextStatus) => {
     if (normalizeStatus(redemption.status) === nextStatus) return
-    if (nextStatus === '已拒绝') {
-      setRejectModal(redemption.id)
-      setRejectReason('')
-      return
-    }
-    if (nextStatus === '已发货') {
-      setShipModal(redemption.id)
-      setShipForm({ express_company: redemption.express_company || '', tracking_number: redemption.tracking_number || '' })
-      return
-    }
     updateStatus(redemption.id, nextStatus)
   }
 
@@ -161,7 +146,7 @@ export default function AdminRedemptions() {
                   <th className="px-4 py-3">兑换物品</th>
                   <th className="px-4 py-3">消耗积分</th>
                   <th className="px-4 py-3">申请时间</th>
-                  <th className="px-4 py-3">配送/备注</th>
+                  <th className="px-4 py-3">备注</th>
                   <th className="px-4 py-3">审核状态</th>
                 </tr>
               </thead>
@@ -173,7 +158,6 @@ export default function AdminRedemptions() {
                       <td className="px-4 py-4 text-xs font-medium text-gray-500">#{r.id}</td>
                       <td className="px-4 py-4">
                         <div className="text-sm font-medium text-gray-900">{r.student_name || r.real_name}</div>
-                        {r.address_snapshot && <div className="mt-1 max-w-48 truncate text-xs text-gray-400" title={r.address_snapshot}>{r.address_snapshot}</div>}
                       </td>
                       <td className="px-4 py-4">
                         <div className="flex items-center gap-3">
@@ -186,9 +170,7 @@ export default function AdminRedemptions() {
                       <td className="px-4 py-4 text-sm font-semibold text-indigo-600">{r.points_spent ?? r.points}</td>
                       <td className="px-4 py-4 text-xs text-gray-500">{r.created_at ? new Date(r.created_at).toLocaleString('zh-CN') : '-'}</td>
                       <td className="px-4 py-4 text-xs text-gray-500">
-                        {r.express_company ? <div>{r.express_company} · {r.tracking_number || '未填单号'}</div> : <div className="text-gray-400">暂无配送信息</div>}
-                        {currentStatus === '已拒绝' && r.reject_reason && <div className="mt-1 max-w-48 truncate text-red-500" title={r.reject_reason}>拒绝：{r.reject_reason}</div>}
-                        {r.remark && <div className="mt-1 max-w-48 truncate" title={r.remark}>备注：{r.remark}</div>}
+                        {r.remark || <span className="text-gray-400">暂无备注</span>}
                       </td>
                       <td className="px-4 py-4">
                         <select

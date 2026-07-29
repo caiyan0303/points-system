@@ -2,14 +2,15 @@ import { useState, useEffect } from 'react'
 import api from '../../api'
 import AppLayout from '../../components/AppLayout'
 import Toast from '../../components/Toast'
+import InformationPageTabs from '../../components/InformationPageTabs'
+import { useAdminScope } from '../../contexts/AdminScopeContext'
 import { Plus, X, UserPlus, Trash2, ChevronRight, ArrowLeft } from 'lucide-react'
 
 export default function AdminGroups() {
+  const { yearId, projectId, selectedYear, selectedProject } = useAdminScope()
   const [groups, setGroups] = useState([])
   const [years, setYears] = useState([])
   const [projects, setProjects] = useState([])
-  const [yearId, setYearId] = useState('')
-  const [projectId, setProjectId] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [toast, setToast] = useState(null)
@@ -36,12 +37,10 @@ export default function AdminGroups() {
   }
 
   useEffect(() => {
-    fetchGroups()
     api.get('/api/common/years').then(({ data }) => setYears(data.items || data))
     api.get('/api/common/projects').then(({ data }) => setProjects(data.items || data))
   }, [])
-
-  const handleSearch = () => fetchGroups()
+  useEffect(() => { fetchGroups() }, [yearId, projectId])
 
   const handleCreate = async () => {
     try {
@@ -252,24 +251,14 @@ export default function AdminGroups() {
               <h1 className="text-2xl font-bold text-gray-900">小组管理</h1>
               <p className="text-gray-500 mt-1">管理学员分组</p>
             </div>
-            <button onClick={() => setCreateModal(true)} className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700">
+            <button onClick={() => { setCreateForm({ name: '', year_id: yearId || '', project_id: projectId || '' }); setCreateModal(true) }} className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700">
               <Plus className="w-4 h-4" /> 创建小组
             </button>
           </div>
+          <InformationPageTabs />
 
-          {/* Filters */}
-          <div className="bg-white rounded-xl border border-gray-200 p-4 mb-6">
-            <div className="flex items-center gap-3">
-              <select value={yearId} onChange={(e) => setYearId(e.target.value)} className="px-3 py-2.5 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500">
-                <option value="">所有年度</option>
-                {years.map(y => <option key={y.id} value={y.id}>{y.name}</option>)}
-              </select>
-              <select value={projectId} onChange={(e) => setProjectId(e.target.value)} className="px-3 py-2.5 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500">
-                <option value="">所有项目</option>
-                {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-              </select>
-              <button onClick={handleSearch} className="px-4 py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700">筛选</button>
-            </div>
+          <div className="mb-5 rounded-xl border border-indigo-100 bg-indigo-50/60 px-4 py-3 text-sm text-indigo-700">
+            当前范围：{selectedYear?.name || '未选择年度'} · {selectedProject?.name || '请在顶部选择项目'}
           </div>
 
           {/* Groups List */}

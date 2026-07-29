@@ -1,40 +1,21 @@
 import { useState, useEffect } from 'react'
 import api from '../../api'
 import AppLayout from '../../components/AppLayout'
-import Toast from '../../components/Toast'
-import { User, Mail, Phone, MapPin, Building, Calendar, Briefcase, Users } from 'lucide-react'
+import { User, Building, Calendar, Briefcase, Users } from 'lucide-react'
 
 export default function StudentProfile() {
   const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-  const [editing, setEditing] = useState(false)
-  const [form, setForm] = useState({ phone: '', address: '' })
-  const [saving, setSaving] = useState(false)
-  const [toast, setToast] = useState(null)
-
-  const showToast = (msg, type = 'success') => { setToast({ msg, type }); setTimeout(() => setToast(null), 3000) }
 
   useEffect(() => {
     api.get('/api/student/profile')
       .then(({ data }) => {
         setProfile(data)
-        setForm({ phone: data.phone || '', address: data.address || '' })
         setLoading(false)
       })
       .catch((err) => { setError(err.response?.data?.detail || '加载失败'); setLoading(false) })
   }, [])
-
-  const handleSave = async () => {
-    setSaving(true)
-    try {
-      await api.put('/api/student/profile', form)
-      setProfile({ ...profile, ...form })
-      showToast('个人信息已更新')
-      setEditing(false)
-    } catch (err) { showToast(err.response?.data?.detail || '保存失败', 'error') }
-    finally { setSaving(false) }
-  }
 
   if (loading) {
     return (
@@ -57,9 +38,6 @@ export default function StudentProfile() {
   const fields = [
     { label: '姓名', value: profile.real_name, icon: User, editable: false },
     { label: '用户名', value: profile.username || profile.real_name, icon: User, editable: false },
-    { label: '邮箱', value: profile.email || '-', icon: Mail, editable: false },
-    { label: '手机', value: form.phone || '-', icon: Phone, editable: true, field: 'phone' },
-    { label: '地址', value: form.address || '-', icon: MapPin, editable: true, field: 'address' },
     { label: '体系', value: profile.system || '-', icon: Building, editable: false },
     { label: '一级部门', value: profile.level1_dept || '-', icon: Building, editable: false },
     { label: '职位信息', value: profile.position || '-', icon: Briefcase, editable: false },
@@ -70,7 +48,6 @@ export default function StudentProfile() {
 
   return (
     <AppLayout>
-      <Toast message={toast?.msg} type={toast?.type} onClose={() => setToast(null)} />
       <div className="mb-7">
         <p className="text-xs font-bold uppercase tracking-[.22em] text-indigo-500">Personal Center</p>
         <h1 className="mt-2 text-3xl font-black text-slate-900">个人中心</h1>
@@ -103,31 +80,14 @@ export default function StudentProfile() {
 
         {/* Info Fields */}
         <div className="glass-panel rounded-[30px] border p-7">
-          <div className="flex items-center justify-between mb-6">
-            <h3 className="font-semibold text-gray-900">个人资料</h3>
-            {!editing && (
-              <button onClick={() => setEditing(true)} className="px-4 py-2 text-sm bg-indigo-50 text-indigo-600 rounded-lg hover:bg-indigo-100">
-                编辑
-              </button>
-            )}
-          </div>
+          <div className="mb-6"><h3 className="font-semibold text-gray-900">个人资料</h3></div>
 
           <div className="grid gap-3 md:grid-cols-2">
             {fields.map((f) => (
               <div key={f.label} className="flex items-center gap-3 rounded-2xl bg-white/45 p-3.5">
                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-50"><f.icon className="h-4 w-4 text-indigo-500" /></div>
                 <span className="w-18 text-xs text-slate-500">{f.label}</span>
-                {editing && f.editable ? (
-                  <input
-                    type="text"
-                    value={form[f.field]}
-                    onChange={(e) => setForm({ ...form, [f.field]: e.target.value })}
-                    className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500"
-                    placeholder={f.label}
-                  />
-                ) : (
-                  <span className="text-sm text-gray-900 flex-1">{f.value}</span>
-                )}
+                <span className="text-sm text-gray-900 flex-1">{f.value}</span>
               </div>
             ))}
           </div>
@@ -151,14 +111,6 @@ export default function StudentProfile() {
             </div>
           )}
 
-          {editing && (
-            <div className="flex gap-3 mt-6 pt-4 border-t border-gray-100">
-              <button onClick={() => setEditing(false)} className="flex-1 py-2.5 text-sm font-medium border border-gray-200 rounded-lg hover:bg-gray-50">取消</button>
-              <button onClick={handleSave} disabled={saving} className="flex-1 py-2.5 text-sm font-medium bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50">
-                {saving ? '保存中...' : '保存修改'}
-              </button>
-            </div>
-          )}
         </div>
       </div>
     </AppLayout>

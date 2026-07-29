@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom'
-import { ListChecks, PlusCircle } from 'lucide-react'
+import { ListChecks, PlusCircle, Table2 } from 'lucide-react'
 
 export default function PointsPageTabs({ type }) {
   const location = useLocation()
@@ -7,6 +7,7 @@ export default function PointsPageTabs({ type }) {
   const tabs = [
     { path: basePath, label: '积分录入', icon: PlusCircle },
     { path: `${basePath}/records`, label: '积分流水', icon: ListChecks },
+    { path: `${basePath}/summary`, label: type === 'team' ? '小组积分总表' : '学员积分总表', icon: Table2 },
   ]
 
   return (

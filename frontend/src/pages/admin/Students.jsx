@@ -3,10 +3,11 @@ import api from '../../api'
 import AppLayout from '../../components/AppLayout'
 import Pagination from '../../components/Pagination'
 import Toast from '../../components/Toast'
+import InformationPageTabs from '../../components/InformationPageTabs'
 import { useAdminScope } from '../../contexts/AdminScopeContext'
 import {
-  Search, Award, X, UserPlus, Edit, Ban, CheckCircle, RefreshCw,
-  Eye, Upload, Download, Minus, Plus
+  Search, Award, X, UserPlus, Edit, Ban, RefreshCw,
+  Eye, Upload, Download
 } from 'lucide-react'
 import * as XLSX from 'xlsx'
 const CATEGORIES = [
@@ -15,7 +16,7 @@ const CATEGORIES = [
 ]
 
 export default function AdminStudents() {
-  const { yearId: scopeYearId, projectId: scopeProjectId, setYearId: setScopeYearId, setProjectId: setScopeProjectId } = useAdminScope()
+  const { yearId, projectId } = useAdminScope()
   const [students, setStudents] = useState([])
   const [years, setYears] = useState([])
   const [allProjects, setAllProjects] = useState([])
@@ -24,8 +25,6 @@ export default function AdminStudents() {
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [keyword, setKeyword] = useState('')
-  const [yearId, setYearId] = useState(scopeYearId)
-  const [projectId, setProjectId] = useState(scopeProjectId)
   const [groupId, setGroupId] = useState('')
   const [accountStatus, setAccountStatus] = useState('')
   const [employmentStatus, setEmploymentStatus] = useState('')
@@ -49,12 +48,11 @@ export default function AdminStudents() {
   const [batchPreview, setBatchPreview] = useState(null)
 
   const [pointForm, setPointForm] = useState({ points: '', category: '线上学习', description: '', phase_id: '' })
-  const [createForm, setCreateForm] = useState({ real_name: '', email: '', phone: '', department: '', system: '', level1_dept: '', position: '', year_id: '', project_id: '', group_id: '', group_name: '', address: '' })
-  const [editForm, setEditForm] = useState({ real_name: '', email: '', phone: '', address: '', department: '', system: '', level1_dept: '', position: '', year_id: '', project_id: '', group_id: '', group_name: '', employment_status: '在职', account_status: '启用' })
+  const [createForm, setCreateForm] = useState({ real_name: '', department: '', system: '', level1_dept: '', position: '', year_id: '', project_id: '', group_id: '', group_name: '' })
+  const [editForm, setEditForm] = useState({ real_name: '', department: '', system: '', level1_dept: '', position: '', year_id: '', project_id: '', group_id: '', group_name: '', employment_status: '在职', account_status: '启用' })
 
   const showToast = (msg, type = 'success') => { setToast({ msg, type }); setTimeout(() => setToast(null), 3000) }
 
-  const filteredProjects = yearId ? allProjects.filter(p => String(p.year_id) === String(yearId)) : allProjects
   const createProjects = createForm.year_id
     ? allProjects.filter(p => String(p.year_id) === String(createForm.year_id))
     : allProjects
@@ -84,10 +82,6 @@ export default function AdminStudents() {
 
   useEffect(() => { fetchStudents() }, [page])
   useEffect(() => {
-    setYearId(scopeYearId)
-    setProjectId(scopeProjectId)
-  }, [scopeYearId, scopeProjectId])
-  useEffect(() => {
     if (page !== 1) setPage(1)
     else fetchStudents()
   }, [yearId, projectId])
@@ -103,7 +97,7 @@ export default function AdminStudents() {
 
   // Selection handlers
   const toggleSelect = (id) => {
-    setSelectedIds(prev => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next })
+    setSelectedIds(prev => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next })
   }
   const toggleAll = () => {
     if (selectedIds.size === students.length) setSelectedIds(new Set())
@@ -170,7 +164,7 @@ export default function AdminStudents() {
       }
       const { data } = await api.post('/api/admin/students', payload)
       showToast(data.message || '学员创建成功')
-      setCreateModal(false); setCreateForm({ real_name: '', email: '', phone: '', department: '', system: '', level1_dept: '', position: '', year_id: '', project_id: '', group_id: '', group_name: '', address: '' })
+      setCreateModal(false); setCreateForm({ real_name: '', department: '', system: '', level1_dept: '', position: '', year_id: '', project_id: '', group_id: '', group_name: '' })
       api.get('/api/admin/groups').then(({ data: groupData }) => setGroups(groupData || []))
       fetchStudents()
     } catch (err) { showToast(err.response?.data?.detail || '创建失败', 'error') }
@@ -179,7 +173,7 @@ export default function AdminStudents() {
   // Edit student
   const openEdit = (s) => {
     setEditModal(s)
-    setEditForm({ real_name: s.real_name, email: s.email || '', phone: s.phone || '', address: s.address || '', department: s.department || '', system: s.system || '', level1_dept: s.level1_dept || '', position: s.position || '', year_id: s.year_id || '', project_id: s.project_id || '', group_id: s.group_id || '', group_name: s.group_name || '', employment_status: s.employment_status, account_status: s.account_status })
+    setEditForm({ real_name: s.real_name, department: s.department || '', system: s.system || '', level1_dept: s.level1_dept || '', position: s.position || '', year_id: s.year_id || '', project_id: s.project_id || '', group_id: s.group_id || '', group_name: s.group_name || '', employment_status: s.employment_status, account_status: s.account_status })
   }
   const handleEdit = async () => {
     try { await api.put(`/api/admin/students/${editModal.id}`, {...editForm, year_id: editForm.year_id || null, project_id: editForm.project_id || null, group_id: editForm.group_id || null}); showToast('已更新'); setEditModal(null); api.get('/api/admin/groups').then(({ data }) => setGroups(data || [])); fetchStudents() }
@@ -228,7 +222,7 @@ export default function AdminStudents() {
         }
                 // 归一化字段名（中文 → 英文）
         const fieldMap = {
-          '姓名': 'real_name', '邮箱': 'email', '手机': 'phone', '电话': 'phone', '地址': 'address', '收货地址': 'address',
+          '姓名': 'real_name',
           '部门': 'department', '体系': 'system', '一级部门': 'level1_dept', '职位信息': 'position', '职位': 'position',
           '所属年度': 'year_name', '培训项目': 'project_name', '所属小组': 'group_name',
           '项目标注': 'enrollment_label', '备注': 'enrollment_remark',
@@ -285,7 +279,8 @@ export default function AdminStudents() {
           <p className="text-gray-500 mt-1">管理所有学员及积分（已选 {selectedIds.size} 人）</p>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={() => setCreateModal(true)} className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700">
+          {selectedIds.size > 0 && <button onClick={handleBatchDelete} className="px-4 py-2.5 text-sm font-medium text-red-600 hover:bg-red-50 rounded-lg">批量删除（{selectedIds.size}）</button>}
+          <button onClick={() => { setCreateForm({ real_name: '', department: '', system: '', level1_dept: '', position: '', year_id: yearId || '', project_id: projectId || '', group_id: '', group_name: '' }); setCreateModal(true) }} className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700">
             <UserPlus className="w-4 h-4" /> 新增学员
           </button>
           <button onClick={() => setBatchModal(true)} className="flex items-center gap-2 px-4 py-2.5 border border-gray-200 text-gray-600 rounded-lg text-sm font-medium hover:bg-gray-50">
@@ -296,6 +291,7 @@ export default function AdminStudents() {
           </button>
         </div>
       </div>
+      <InformationPageTabs />
 
       {/* Filters */}
       <form onSubmit={handleSearch} className="bg-white rounded-xl border border-gray-200 p-4 mb-4">
@@ -304,17 +300,9 @@ export default function AdminStudents() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input type="text" value={keyword} onChange={(e) => setKeyword(e.target.value)} placeholder="搜索姓名、部门、职位..." className="w-48 pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500" />
           </div>
-          <select value={yearId} onChange={(e) => { setYearId(e.target.value); setProjectId(''); setScopeYearId(e.target.value) }} className="px-3 py-2.5 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500">
-            <option value="">所有年度</option>
-            {years.map(y => <option key={y.id} value={y.id}>{y.name}</option>)}
-          </select>
-          <select value={projectId} onChange={(e) => { setProjectId(e.target.value); setScopeProjectId(e.target.value) }} className="px-3 py-2.5 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500">
-            <option value="">所有项目</option>
-            {filteredProjects.map(p => <option key={p.id} value={p.id}>{p.name}（{years.find(y => y.id === p.year_id)?.name || p.year_id}）</option>)}
-          </select>
           <select value={groupId} onChange={(e) => setGroupId(e.target.value)} className="px-3 py-2.5 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500">
             <option value="">所有小组</option>
-            {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+            {groups.filter(g => !projectId || String(g.project_id) === String(projectId)).map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
           </select>
           <select value={accountStatus} onChange={(e) => setAccountStatus(e.target.value)} className="px-3 py-2.5 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500">
             <option value="">账号状态</option>
@@ -332,24 +320,6 @@ export default function AdminStudents() {
           </button>
         </div>
       </form>
-
-      {/* Batch action bar — always shown */}
-      <div className={`rounded-xl border p-3 mb-4 flex items-center gap-3 ${selectedIds.size > 0 ? 'bg-indigo-50 border-indigo-200' : 'bg-gray-50 border-gray-200'}`}>
-        <span className="text-sm font-medium text-gray-600">批量操作：</span>
-        <span className="text-sm text-gray-400">{selectedIds.size > 0 ? `已选 ${selectedIds.size} 人` : '请先勾选学员'}</span>
-        <button onClick={() => setBatchPointModal(true)} disabled={selectedIds.size === 0} className="flex items-center gap-1 px-3 py-1.5 text-xs bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed">
-          <Plus className="w-3 h-3" /> 批量加分
-        </button>
-        <button onClick={() => { setBatchPointForm({ points: '', category: '特殊调整', description: '', phase_id: '' }); setBatchPointModal(true) }} disabled={selectedIds.size === 0} className="flex items-center gap-1 px-3 py-1.5 text-xs bg-red-500 text-white rounded-lg hover:bg-red-600 disabled:opacity-40 disabled:cursor-not-allowed">
-          <Minus className="w-3 h-3" /> 批量减分
-        </button>
-        {selectedIds.size > 0 && (
-          <button onClick={() => setSelectedIds(new Set())} className="px-3 py-1.5 text-xs text-gray-500 hover:text-gray-700">清除选择</button>
-        )}
-        {selectedIds.size > 0 && (
-          <button onClick={handleBatchDelete} className="ml-auto px-3 py-1.5 text-xs bg-red-600 text-white rounded-lg hover:bg-red-700">批量删除</button>
-        )}
-      </div>
 
       {/* Table */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
@@ -375,7 +345,6 @@ export default function AdminStudents() {
                   <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">一级部门</th>
                   <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">职位信息</th>
                   <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">所属小组</th>
-                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">邮箱</th>
                   <th className="text-center px-4 py-3 text-xs font-medium text-gray-500">在职</th>
                   <th className="text-center px-4 py-3 text-xs font-medium text-gray-500">账号状态</th>
                   <th className="text-right px-4 py-3 text-xs font-medium text-indigo-600">当前项目积分</th>
@@ -398,7 +367,6 @@ export default function AdminStudents() {
                     <td className="px-4 py-3 text-sm text-gray-700">{s.level1_dept || '-'}</td>
                     <td className="px-4 py-3 text-sm text-gray-700">{s.position || '-'}</td>
                     <td className="px-4 py-3 text-sm text-gray-500">{s.group_name || '-'}</td>
-                    <td className="px-4 py-3 text-sm text-gray-500">{s.email || '-'}</td>
                     <td className="px-4 py-3 text-center">
                       <span className={`text-xs px-2 py-0.5 rounded-full ${s.employment_status === '在职' ? 'bg-green-50 text-green-600' : 'bg-gray-100 text-gray-500'}`}>{s.employment_status}</span>
                     </td>
@@ -476,11 +444,9 @@ export default function AdminStudents() {
               <div><label className="block text-sm text-gray-600 mb-1">体系</label><input type="text" value={createForm.system} onChange={(e) => setCreateForm({...createForm, system: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" /></div>
               <div><label className="block text-sm text-gray-600 mb-1">一级部门</label><input type="text" value={createForm.level1_dept} onChange={(e) => setCreateForm({...createForm, level1_dept: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" /></div>
               <div><label className="block text-sm text-gray-600 mb-1">职位信息</label><input type="text" value={createForm.position} onChange={(e) => setCreateForm({...createForm, position: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" /></div>
-              <div><label className="block text-sm text-gray-600 mb-1">邮箱</label><input type="email" value={createForm.email} onChange={(e) => setCreateForm({...createForm, email: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" /></div>
               <div><label className="block text-sm text-gray-600 mb-1">年度</label><select value={createForm.year_id} onChange={(e) => setCreateForm({...createForm, year_id: e.target.value, project_id: '', group_id: '', group_name: ''})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"><option value="">选择年度</option>{years.map(y => <option key={y.id} value={y.id}>{y.name}</option>)}</select></div>
               <div><label className="block text-sm text-gray-600 mb-1">培训项目</label><select value={createForm.project_id} onChange={(e) => setCreateForm({...createForm, project_id: e.target.value, group_id: '', group_name: ''})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"><option value="">选择项目</option>{createProjects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></div>
               <div><label className="block text-sm text-gray-600 mb-1">所属小组</label><input type="text" list="create-student-groups" value={createForm.group_name} onChange={(e) => setCreateForm({...createForm, group_id: '', group_name: e.target.value})} disabled={!createForm.project_id} placeholder={createForm.project_id ? '选择已有小组或输入新小组' : '请先选择培训项目'} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm disabled:bg-gray-100 disabled:text-gray-400" /><datalist id="create-student-groups">{createGroups.map(g => <option key={g.id} value={g.name} />)}</datalist><p className="mt-1 text-xs text-gray-400">没有对应小组时，将按输入名称自动创建</p></div>
-              <div className="col-span-2"><label className="block text-sm text-gray-600 mb-1">收货地址</label><input type="text" value={createForm.address} onChange={(e) => setCreateForm({...createForm, address: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" /></div>
             </div>
             <div className="flex gap-3 mt-6"><button onClick={() => setCreateModal(false)} className="flex-1 py-2.5 text-sm border border-gray-200 rounded-lg hover:bg-gray-50">取消</button><button onClick={handleCreate} className="flex-1 py-2.5 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">创建学员</button></div>
           </div>
@@ -497,13 +463,11 @@ export default function AdminStudents() {
               <div><label className="block text-sm text-gray-600 mb-1">体系</label><input type="text" value={editForm.system || ''} onChange={(e) => setEditForm({...editForm, system: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" /></div>
               <div><label className="block text-sm text-gray-600 mb-1">一级部门</label><input type="text" value={editForm.level1_dept || ''} onChange={(e) => setEditForm({...editForm, level1_dept: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" /></div>
               <div><label className="block text-sm text-gray-600 mb-1">职位信息</label><input type="text" value={editForm.position || ''} onChange={(e) => setEditForm({...editForm, position: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" /></div>
-              <div><label className="block text-sm text-gray-600 mb-1">邮箱</label><input type="email" value={editForm.email || ''} onChange={(e) => setEditForm({...editForm, email: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" /></div>
               <div><label className="block text-sm text-gray-600 mb-1">年度</label><select value={editForm.year_id || ''} onChange={(e) => setEditForm({...editForm, year_id: e.target.value, project_id: '', group_id: '', group_name: ''})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"><option value="">选择年度</option>{years.map(y => <option key={y.id} value={y.id}>{y.name}</option>)}</select></div>
               <div><label className="block text-sm text-gray-600 mb-1">培训项目</label><select value={editForm.project_id || ''} onChange={(e) => setEditForm({...editForm, project_id: e.target.value, group_id: '', group_name: ''})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"><option value="">选择项目</option>{editProjects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></div>
               <div><label className="block text-sm text-gray-600 mb-1">所属小组</label><input type="text" list="edit-student-groups" value={editForm.group_name || ''} onChange={(e) => setEditForm({...editForm, group_id: '', group_name: e.target.value})} disabled={!editForm.project_id} placeholder={editForm.project_id ? '选择已有小组或输入新小组' : '请先选择培训项目'} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm disabled:bg-gray-100 disabled:text-gray-400" /><datalist id="edit-student-groups">{editGroups.map(g => <option key={g.id} value={g.name} />)}</datalist><p className="mt-1 text-xs text-gray-400">没有对应小组时，将按输入名称自动创建</p></div>
               <div><label className="block text-sm text-gray-600 mb-1">在职状态</label><select value={editForm.employment_status || '在职'} onChange={(e) => setEditForm({...editForm, employment_status: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"><option>在职</option><option>离职</option></select></div>
               <div><label className="block text-sm text-gray-600 mb-1">账号状态</label><select value={editForm.account_status || '启用'} onChange={(e) => setEditForm({...editForm, account_status: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"><option>启用</option><option>终止</option></select></div>
-              <div className="col-span-2"><label className="block text-sm text-gray-600 mb-1">收货地址</label><input type="text" value={editForm.address || ''} onChange={(e) => setEditForm({...editForm, address: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" /></div>
             </div>
             <div className="flex gap-3 mt-6"><button onClick={() => setEditModal(null)} className="flex-1 py-2.5 text-sm border border-gray-200 rounded-lg hover:bg-gray-50">取消</button><button onClick={handleEdit} className="flex-1 py-2.5 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">保存</button></div>
           </div>
@@ -528,8 +492,6 @@ export default function AdminStudents() {
               <div><span className="text-gray-500">职位信息:</span> <span className="font-medium">{viewModal.position || '-'}</span></div>
               <div><span className="text-gray-500">小组:</span> <span className="font-medium">{viewModal.group_name || '-'}</span></div>
               <div><span className="text-gray-500">部门:</span> <span className="font-medium">{viewModal.department || '-'}</span></div>
-              <div><span className="text-gray-500">邮箱:</span> <span className="font-medium">{viewModal.email || '-'}</span></div>
-              <div><span className="text-gray-500">地址:</span> <span className="font-medium">{viewModal.address || '-'}</span></div>
             </div>
           </div>
         </div>
@@ -562,10 +524,10 @@ export default function AdminStudents() {
                 {batchData.length > 0 && (
                   <div className="max-h-40 overflow-y-auto border rounded-lg">
                     <table className="w-full text-sm">
-                      <thead><tr className="bg-gray-50"><th className="px-3 py-2 text-left text-xs font-medium text-gray-500">姓名</th><th className="px-3 py-2 text-left text-xs font-medium text-gray-500">体系</th><th className="px-3 py-2 text-left text-xs font-medium text-gray-500">一级部门</th><th className="px-3 py-2 text-left text-xs font-medium text-gray-500">职位信息</th><th className="px-3 py-2 text-left text-xs font-medium text-gray-500">邮箱</th></tr></thead>
+                      <thead><tr className="bg-gray-50"><th className="px-3 py-2 text-left text-xs font-medium text-gray-500">姓名</th><th className="px-3 py-2 text-left text-xs font-medium text-gray-500">体系</th><th className="px-3 py-2 text-left text-xs font-medium text-gray-500">一级部门</th><th className="px-3 py-2 text-left text-xs font-medium text-gray-500">职位信息</th></tr></thead>
                       <tbody className="divide-y divide-gray-50">
                         {batchData.slice(0, 10).map((item, i) => (
-                          <tr key={i}><td className="px-3 py-2 text-gray-700">{item.real_name || item.name}</td><td className="px-3 py-2 text-gray-500">{item.system || '-'}</td><td className="px-3 py-2 text-gray-500">{item.level1_dept || '-'}</td><td className="px-3 py-2 text-gray-500">{item.position || '-'}</td><td className="px-3 py-2 text-gray-500">{item.email || '-'}</td></tr>
+                          <tr key={i}><td className="px-3 py-2 text-gray-700">{item.real_name || item.name}</td><td className="px-3 py-2 text-gray-500">{item.system || '-'}</td><td className="px-3 py-2 text-gray-500">{item.level1_dept || '-'}</td><td className="px-3 py-2 text-gray-500">{item.position || '-'}</td></tr>
                         ))}
                       </tbody>
                     </table>

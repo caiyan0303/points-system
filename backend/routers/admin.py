@@ -2867,8 +2867,13 @@ def list_redemptions(
     q = db.query(Redemption)
     if status:
         status_aliases = {
-            RedemptionStatus.APPROVED.value: [RedemptionStatus.APPROVED.value, RedemptionStatus.PENDING_SHIP.value],
+            RedemptionStatus.APPROVED.value: [
+                RedemptionStatus.APPROVED.value, RedemptionStatus.PENDING_SHIP.value,
+                RedemptionStatus.SHIPPED.value, RedemptionStatus.PENDING_PICKUP.value,
+                RedemptionStatus.RECEIVED.value, RedemptionStatus.COMPLETED.value,
+            ],
             RedemptionStatus.SHIPPED.value: [RedemptionStatus.SHIPPED.value, RedemptionStatus.PENDING_PICKUP.value],
+            RedemptionStatus.CANCELLED.value: [RedemptionStatus.CANCELLED.value, RedemptionStatus.REJECTED.value],
         }
         q = q.filter(Redemption.status.in_(status_aliases.get(status, [status])))
     if keyword:
