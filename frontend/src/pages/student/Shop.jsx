@@ -76,7 +76,6 @@ export default function StudentShop() {
     if (category === '热门推荐') return products.slice(0, 4)
     return products.filter((item) => item.category === category)
   }, [category, products])
-  const recommended = products.find((item) => !getButtonState(item).disabled) || products[0]
   const cumulativePoints = Number(stats?.personal_cumulative_points ?? stats?.total_earned ?? stats?.period_points ?? 0)
   const availablePoints = Number(stats?.available_points || 0)
   const usedPoints = Math.max(0, cumulativePoints - availablePoints)
@@ -96,11 +95,6 @@ export default function StudentShop() {
         {[['我的积分', cumulativePoints, Trophy, 'text-indigo-600'], ['可兑换积分', availablePoints, Gift, 'text-violet-600'], ['已使用积分', usedPoints, ShoppingBag, 'text-cyan-600']].map(([label, value, Icon, tone], index) => <div key={label} className={`flex items-center gap-4 px-6 py-5 ${index ? 'border-t border-indigo-50 sm:border-l sm:border-t-0' : ''}`}><span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-indigo-50"><Icon className={`h-5 w-5 ${tone}`} /></span><div><p className="text-xs font-bold text-slate-400">{label}</p><p className={`mt-1 text-3xl font-black ${tone}`}>{value}<span className="ml-1 text-xs text-slate-400">分</span></p></div></div>)}
       </div>
     </section>
-
-    {recommended && <section className="relative mb-6 overflow-hidden rounded-[28px] border border-indigo-100 bg-gradient-to-r from-indigo-600 via-violet-600 to-blue-500 p-6 text-white shadow-xl shadow-indigo-200/40">
-      <div className="absolute -right-8 -top-16 h-56 w-56 rounded-full bg-white/20 blur-2xl" />
-      <div className="relative flex items-center justify-between gap-6"><div><p className="text-xs font-black uppercase tracking-[.18em] text-indigo-100">本月推荐</p><h2 className="mt-2 text-2xl font-black">精选好物 · 助力成长</h2><p className="mt-2 text-sm text-indigo-100">{recommended.name}，仅需 {recommended.points_required} 积分</p><button type="button" onClick={() => setRedeemModal(recommended)} className="mt-5 rounded-xl bg-white px-5 py-2.5 text-xs font-black text-indigo-700 shadow-lg">查看详情</button></div><div className="hidden h-32 w-40 shrink-0 items-center justify-center overflow-hidden rounded-[24px] border border-white/25 bg-white/15 backdrop-blur-md sm:flex">{recommended.image_url ? <img src={recommended.image_url} alt={recommended.name} className="h-full w-full object-cover" /> : <Gift className="h-16 w-16 text-amber-200" />}</div></div>
-    </section>}
 
     <section className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-xs font-black uppercase tracking-[.18em] text-indigo-500">Selected Rewards</p><h2 className="mt-1 text-2xl font-black text-slate-900">精选商品</h2></div><div className="flex flex-wrap gap-2">{categories.map((item) => <button type="button" key={item} onClick={() => setCategory(item)} className={`rounded-xl px-4 py-2 text-xs font-black transition ${category === item ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200' : 'glass-chip text-slate-500 hover:text-indigo-600'}`}>{item}</button>)}</div></section>
 
