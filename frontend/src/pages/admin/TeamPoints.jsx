@@ -8,12 +8,6 @@ import PointsPageTabs from '../../components/PointsPageTabs'
 import { useAdminScope } from '../../contexts/AdminScopeContext'
 
 const CATEGORIES = ['线上案例沟通', '线上案例输出', '阶段案例评优', '沙盘共创', '特殊调整']
-const POINT_OPTIONS = {
-  线上案例沟通: [20, 15, 10],
-  线上案例输出: [20, 15, 10],
-  阶段案例评优: [20],
-  沙盘共创: [50, 40, 30, 20, 10],
-}
 const DATA_SOURCES = ['Excel导入', '系统自动', '人工核验', '问卷星', '现场记录', '其他']
 const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
 const textValue = value => String(value ?? '').trim()
@@ -37,7 +31,7 @@ export default function AdminTeamPoints() {
   const [submitting, setSubmitting] = useState(false)
   const [importing, setImporting] = useState(false)
   const [importPreview, setImportPreview] = useState(null)
-  const [form, setForm] = useState({ year_id: '', project_id: '', phase_id: '', group_id: '', category: '线上案例沟通', item_name: '', points: '20', obtained_date: today(), data_source: '单个录入', source_note: '', remark: '' })
+  const [form, setForm] = useState({ year_id: '', project_id: '', phase_id: '', group_id: '', category: '线上案例沟通', item_name: '', points: '', obtained_date: today(), data_source: '单个录入', source_note: '', remark: '' })
   const showToast = (msg, type = 'success') => { setToast({ msg, type }); setTimeout(() => setToast(null), 3000) }
 
   const visibleProjects = useMemo(() => form.year_id ? projects.filter(item => String(item.year_id) === String(form.year_id)) : projects, [form.year_id, projects])
@@ -59,7 +53,7 @@ export default function AdminTeamPoints() {
     setForm(current => ({ ...current, year_id: scopeYearId, project_id: scopeProjectId, phase_id: '', group_id: '' }))
   }, [scopeYearId, scopeProjectId])
 
-  const changeCategory = (category) => setForm(current => ({ ...current, category, points: category === '特殊调整' ? '' : String(POINT_OPTIONS[category][0]) }))
+  const changeCategory = (category) => setForm(current => ({ ...current, category }))
   const submit = async () => {
     if (!form.year_id || !form.project_id || !form.phase_id || !form.group_id || !form.item_name.trim() || !form.points) return showToast('请完整填写年度、项目、阶段、小组、积分事项和积分值', 'error')
     if (form.category === '特殊调整' && !form.remark.trim()) return showToast('特殊调整必须填写调整原因', 'error')
@@ -166,7 +160,7 @@ export default function AdminTeamPoints() {
           <label className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-emerald-600 text-white text-sm cursor-pointer hover:bg-emerald-700"><Upload className="w-4 h-4" /> Excel批量导入<input type="file" accept=".xlsx,.xls" onChange={readImportFile} className="hidden" /></label>
         </div>
       </div>
-      {['线上案例沟通', '线上案例输出'].includes(form.category) && <div className="mb-4 rounded-lg bg-blue-50 border border-blue-100 px-4 py-3 text-sm text-blue-700">系统会按相同“积分事项”的有效录入顺序自动计分：前2组20分、第3—4组15分、后续按时完成10分。</div>}
+      <div className="mb-4 rounded-lg border border-indigo-100 bg-indigo-50 px-4 py-3 text-sm text-indigo-700">个人积分和小组积分均为自定义录入：管理员填写多少分，系统就按原值记录，不会再按类别或提交顺序自动改分。</div>
       <div className="grid grid-cols-4 gap-4">
         <label className="text-sm text-gray-600">年度 *<select value={form.year_id} onChange={e => setForm({ ...form, year_id: e.target.value, project_id: '', group_id: '', phase_id: '' })} className="mt-1 w-full px-3 py-2 border rounded-lg"><option value="">请选择</option>{years.map(y => <option key={y.id} value={y.id}>{y.name}</option>)}</select></label>
         <label className="text-sm text-gray-600">培训项目 *<select value={form.project_id} onChange={e => setForm({ ...form, project_id: e.target.value, group_id: '', phase_id: '' })} className="mt-1 w-full px-3 py-2 border rounded-lg"><option value="">请选择</option>{visibleProjects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
@@ -174,7 +168,7 @@ export default function AdminTeamPoints() {
         <label className="text-sm text-gray-600">计分小组 *<select value={form.group_id} onChange={e => setForm({ ...form, group_id: e.target.value })} className="mt-1 w-full px-3 py-2 border rounded-lg"><option value="">请选择</option>{visibleGroups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}</select></label>
         <label className="text-sm text-gray-600">积分类别 *<select value={form.category} onChange={e => changeCategory(e.target.value)} className="mt-1 w-full px-3 py-2 border rounded-lg">{CATEGORIES.map(c => <option key={c}>{c}</option>)}</select></label>
         <label className="text-sm text-gray-600">积分事项 *<input value={form.item_name} onChange={e => setForm({ ...form, item_name: e.target.value })} placeholder="例如：第一阶段案例沟通提交" className="mt-1 w-full px-3 py-2 border rounded-lg" /></label>
-        <label className="text-sm text-gray-600">积分值 *{form.category === '特殊调整' ? <input type="number" value={form.points} onChange={e => setForm({ ...form, points: e.target.value })} className="mt-1 w-full px-3 py-2 border rounded-lg" /> : <select value={form.points} onChange={e => setForm({ ...form, points: e.target.value })} className="mt-1 w-full px-3 py-2 border rounded-lg">{POINT_OPTIONS[form.category].map(v => <option key={v} value={v}>{v} 分</option>)}</select>}</label>
+        <label className="text-sm text-gray-600">积分值 *<input type="number" step="1" value={form.points} onChange={e => setForm({ ...form, points: e.target.value })} placeholder="自定义填写，如 10 或 -5" className="mt-1 w-full px-3 py-2 border rounded-lg" /><span className="mt-1 block text-xs text-gray-400">按填写值原样记录，负数表示扣减</span></label>
         <label className="text-sm text-gray-600">获得时间 *<input type="date" value={form.obtained_date} onChange={e => setForm({ ...form, obtained_date: e.target.value })} className="mt-1 w-full px-3 py-2 border rounded-lg" /></label>
         <label className="text-sm text-gray-600">数据来源<select value={form.data_source} onChange={e => setForm({ ...form, data_source: e.target.value })} className="mt-1 w-full px-3 py-2 border rounded-lg"><option>单个录入</option>{DATA_SOURCES.map(source => <option key={source}>{source}</option>)}</select></label>
         <label className="text-sm text-gray-600">来源说明<input value={form.source_note} onChange={e => setForm({ ...form, source_note: e.target.value })} placeholder="例如：问卷星提交时间" className="mt-1 w-full px-3 py-2 border rounded-lg" /></label>
