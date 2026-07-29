@@ -4,12 +4,6 @@ import api from '../../api'
 import AppLayout from '../../components/AppLayout'
 import { ArrowRight, Award, Crown, Gift, ShoppingBag, Sparkles, TrendingUp, Trophy, Users } from 'lucide-react'
 
-const rankStyle = [
-  'bg-indigo-100 text-indigo-700 ring-indigo-200',
-  'bg-slate-200 text-slate-600 ring-slate-300',
-  'bg-orange-100 text-orange-700 ring-orange-200',
-]
-
 export default function StudentDashboard() {
   const navigate = useNavigate()
   const [data, setData] = useState(null)
@@ -111,8 +105,8 @@ export default function StudentDashboard() {
           {rankingRows.length ? <div className="space-y-2">{rankingRows.map((item, index) => {
             const name = rankingTab === 'personal' ? item.student_name : item.name || item.group_name
             const points = rankingTab === 'personal' ? item.total_points || 0 : item.final_score ?? item.total_points ?? 0
-            if (index === 0) return <div key={item.student_id || item.id || item.group_id} className={`flex items-center gap-3 rounded-2xl border px-4 py-3 shadow-sm ${item.is_me || item.is_my_group ? 'border-indigo-200 bg-indigo-50/80' : 'border-slate-100 bg-white/80'}`}><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-100 text-indigo-600"><Crown className="h-5 w-5" /></span><div className="flex min-w-0 flex-1 items-center gap-2"><span className="shrink-0 text-sm font-black text-indigo-600">NO.1 {rankingTab === 'personal' ? '阶段冠军' : '团队冠军'}</span><p className="truncate text-base font-black text-slate-800">{name}<span className="ml-1 font-semibold text-slate-500">（{rankingTab === 'personal' ? item.group_name || '暂未分组' : `${item.member_count || 0}名成员`}）</span>{(item.is_me || item.is_my_group) && <span className="ml-2 text-xs font-bold text-indigo-500">我的位置</span>}</p></div><strong className="shrink-0 text-lg font-black text-indigo-600">{points} 分</strong></div>
-            return <div key={item.student_id || item.id || item.group_id} className={`flex items-center gap-4 rounded-2xl px-4 py-3.5 transition ${item.is_me || item.is_my_group ? 'bg-indigo-50/80' : 'bg-white/55'}`}><span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-black ring-1 ${rankStyle[index] || 'bg-slate-100 text-slate-500 ring-slate-200'}`}>{index + 1}</span><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-100 to-violet-100 font-black text-indigo-700">{rankingTab === 'personal' ? name?.slice(-1) : <Users className="h-5 w-5" />}</span><div className="min-w-0 flex-1"><p className="truncate text-sm font-black text-slate-800">{name}{(item.is_me || item.is_my_group) && <span className="ml-2 text-[10px] font-bold text-indigo-500">我的位置</span>}</p><p className="mt-0.5 text-[11px] text-slate-400">{rankingTab === 'personal' ? item.group_name || '暂未分组' : `${item.member_count || 0} 名成员`}</p></div><strong className="text-base font-black text-indigo-600">{points} 分</strong></div>
+            if (index === 0) return <div key={item.student_id || item.id || item.group_id} className={`flex items-center gap-3 rounded-2xl border px-4 py-3 shadow-sm ${item.is_me || item.is_my_group ? 'border-indigo-200 bg-indigo-50/80' : 'border-slate-100 bg-white/80'}`}><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-100 text-indigo-600"><Crown className="h-5 w-5" /></span><div className="flex min-w-0 flex-1 items-center gap-2"><span className="shrink-0 text-sm font-black text-indigo-600">NO.1 {rankingTab === 'personal' ? '阶段冠军' : '团队冠军'}</span><p className="truncate text-base font-black text-slate-800">{name}{(item.is_me || item.is_my_group) && <span className="ml-2 text-xs font-bold text-indigo-500">我的位置</span>}</p></div><strong className="shrink-0 text-lg font-black text-indigo-600">{points} 分</strong></div>
+            return <div key={item.student_id || item.id || item.group_id} className={`flex items-center gap-4 rounded-2xl px-4 py-3.5 transition ${item.is_me || item.is_my_group ? 'bg-indigo-50/80' : 'bg-white/55'}`}><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-100 to-violet-100 text-sm font-black text-indigo-700 ring-1 ring-indigo-200">{index + 1}</span><div className="min-w-0 flex-1"><p className="truncate text-sm font-black text-slate-800">{name}{(item.is_me || item.is_my_group) && <span className="ml-2 text-[10px] font-bold text-indigo-500">我的位置</span>}</p></div><strong className="text-base font-black text-indigo-600">{points} 分</strong></div>
           })}</div> : <p className="py-12 text-center text-sm text-slate-400">暂无排名数据</p>}
         </div>
       </div>
