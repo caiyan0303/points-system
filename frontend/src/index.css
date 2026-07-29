@@ -1,1 +1,26 @@
 @import "tailwindcss";
+
+:root { font-family: Inter, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif; }
+body { margin: 0; min-width: 320px; min-height: 100vh; }
+
+.student-shell {
+  position: relative;
+  overflow-x: hidden;
+  background:
+    radial-gradient(circle at 8% 12%, rgba(99, 102, 241, .18), transparent 30%),
+    radial-gradient(circle at 90% 22%, rgba(34, 211, 238, .15), transparent 28%),
+    radial-gradient(circle at 60% 90%, rgba(168, 85, 247, .13), transparent 34%),
+    linear-gradient(135deg, #f7f8ff 0%, #eef6ff 45%, #f7f2ff 100%);
+}
+.student-topbar { background: rgba(248, 250, 255, .72); border-bottom: 1px solid rgba(255,255,255,.8); backdrop-filter: blur(24px); box-shadow: 0 8px 32px rgba(67, 56, 202, .06); }
+.student-aurora { position: fixed; z-index: 0; border-radius: 999px; filter: blur(16px); pointer-events: none; opacity: .55; animation: float-aurora 9s ease-in-out infinite; }
+.student-aurora-one { width: 320px; height: 320px; right: -100px; top: 100px; background: linear-gradient(135deg, rgba(129,140,248,.28), rgba(34,211,238,.22)); }
+.student-aurora-two { width: 260px; height: 260px; left: -90px; bottom: 80px; background: linear-gradient(135deg, rgba(192,132,252,.22), rgba(96,165,250,.2)); animation-delay: -4s; }
+.glass-panel, .student-shell .bg-white { background: rgba(255,255,255,.68) !important; border-color: rgba(255,255,255,.82) !important; backdrop-filter: blur(22px); box-shadow: 0 18px 55px rgba(75, 85, 170, .09); }
+.glass-panel-strong { background: rgba(255,255,255,.82); border: 1px solid rgba(255,255,255,.92); backdrop-filter: blur(24px); box-shadow: 0 22px 65px rgba(67,56,202,.12); }
+.glass-chip { background: rgba(255,255,255,.64); border: 1px solid rgba(255,255,255,.86); backdrop-filter: blur(14px); }
+.gradient-text { background: linear-gradient(100deg, #4f46e5, #7c3aed 52%, #0891b2); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.soft-grid { position: relative; }
+.hover-lift { transition: transform .25s ease, box-shadow .25s ease, border-color .25s ease; }
+.hover-lift:hover { transform: translateY(-4px); box-shadow: 0 24px 65px rgba(67,56,202,.16); }
+@keyframes float-aurora { 0%,100% { transform: translate3d(0,0,0) scale(1); } 50% { transform: translate3d(0,-18px,0) scale(1.06); } }

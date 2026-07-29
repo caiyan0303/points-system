@@ -1,110 +1,69 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import api from '../../api'
 import AppLayout from '../../components/AppLayout'
 import Pagination from '../../components/Pagination'
-import { Award, Medal, ShoppingBag, TrendingUp } from 'lucide-react'
+import { CalendarDays, Medal, Sparkles, TrendingUp, Users } from 'lucide-react'
 
 const CATEGORIES = ['线上学习', '学习输出', '问卷及测评反馈', '线下出勤', '课堂互动', '结营任务', '小组长职责', '特殊调整']
+const dateText = (value) => value ? new Date(value).toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' }) : '-'
 
 export default function StudentPoints() {
-  const [points, setPoints] = useState([])
+  const [searchParams, setSearchParams] = useSearchParams()
+  const tab = searchParams.get('tab') === 'team' ? 'team' : 'personal'
   const [stats, setStats] = useState(null)
-  const [years, setYears] = useState([])
-  const [projects, setProjects] = useState([])
   const [phases, setPhases] = useState([])
+  const [team, setTeam] = useState(null)
+  const [projects, setProjects] = useState([])
+  const [records, setRecords] = useState([])
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
-  const [yearId, setYearId] = useState('')
-  const [projectId, setProjectId] = useState('')
-  const [phaseId, setPhaseId] = useState('')
   const [category, setCategory] = useState('')
+  const [phaseId, setPhaseId] = useState('')
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    api.get('/api/student/dashboard').then(({ data }) => setStats(data)).catch(() => {})
-    api.get('/api/common/years').then(({ data }) => setYears(data.items || data || [])).catch(() => {})
-    api.get('/api/common/projects').then(({ data }) => setProjects(data.items || data || [])).catch(() => {})
-    api.get('/api/student/phase-overview').then(({ data }) => setPhases(data.phases || data || [])).catch(() => {})
+    Promise.all([
+      api.get('/api/student/dashboard'), api.get('/api/student/phase-overview'),
+      api.get('/api/student/team'), api.get('/api/common/projects'),
+    ]).then(([dashboardRes, phaseRes, teamRes, projectRes]) => {
+      setStats(dashboardRes.data); setPhases(phaseRes.data?.phases || []); setTeam(teamRes.data); setProjects(projectRes.data?.items || projectRes.data || [])
+    }).finally(() => setLoading(false))
   }, [])
 
-  const fetchPoints = (targetPage = page) => {
-    setLoading(true)
-    setError(null)
-    const params = { page: targetPage, page_size: 20 }
-    if (yearId) params.year_id = yearId
-    if (projectId) params.project_id = projectId
-    if (phaseId) params.phase_id = phaseId
+  const fetchRecords = () => {
+    const params = { page, page_size: 20 }
     if (category) params.category = category
-    api.get('/api/student/points/records', { params })
-      .then(({ data }) => { setPoints(data.items || data || []); setTotalPages(data.total_pages || 1) })
-      .catch((err) => setError(err.response?.data?.detail || '加载失败'))
-      .finally(() => setLoading(false))
+    if (phaseId) params.phase_id = phaseId
+    api.get('/api/student/points/records', { params }).then(({ data }) => { setRecords(data.items || []); setTotalPages(data.total_pages || 1) }).catch(() => setRecords([]))
   }
+  useEffect(fetchRecords, [page, category, phaseId])
 
-  useEffect(() => { fetchPoints(page) }, [page])
+  const currentProject = useMemo(() => projects.find((item) => item.name === stats?.project_name), [projects, stats])
+  const group = team?.group || {}
+  const members = team?.members || []
+  const teamRecords = team?.team_point_records || []
+  const memberPersonalPoints = members.reduce((total, item) => total + Number(item.period_points || 0), 0)
+  const groupPersonalPoints = Math.max(Number(group.personal_points || 0), memberPersonalPoints)
+  const groupTeamPoints = Number(group.team_points || 0)
+  const groupFinalScore = groupPersonalPoints + groupTeamPoints
 
-  const handleSearch = () => {
-    if (page === 1) fetchPoints(1)
-    else setPage(1)
-  }
+  if (loading) return <AppLayout><div className="flex h-72 items-center justify-center"><div className="h-10 w-10 animate-spin rounded-full border-2 border-indigo-200 border-b-indigo-600" /></div></AppLayout>
 
-  return (
-    <AppLayout>
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">个人积分</h1>
-        <p className="text-gray-500 mt-1">查看个人积分、阶段排名与每一笔积分记录</p>
-      </div>
+  return <AppLayout>
+    <div className="mb-7"><p className="text-xs font-bold uppercase tracking-[.22em] text-indigo-500">My Project</p><h1 className="mt-2 text-3xl font-black text-slate-900">我的积分详情</h1><p className="mt-2 text-sm text-slate-500">查看我的项目、阶段表现与团队积分构成</p></div>
 
-      {stats && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-          <div className="bg-white rounded-xl border border-gray-200 p-4 text-center"><TrendingUp className="w-5 h-5 text-indigo-500 mx-auto mb-2" /><p className="text-sm text-gray-500">当前项目积分</p><p className="text-2xl font-bold text-indigo-600 mt-1">{stats.period_points || 0}</p></div>
-          <div className="bg-white rounded-xl border border-gray-200 p-4 text-center"><Award className="w-5 h-5 text-green-500 mx-auto mb-2" /><p className="text-sm text-gray-500">个人累计积分</p><p className="text-2xl font-bold text-green-600 mt-1">{stats.personal_cumulative_points || 0}</p></div>
-          <div className="bg-white rounded-xl border border-gray-200 p-4 text-center"><ShoppingBag className="w-5 h-5 text-purple-500 mx-auto mb-2" /><p className="text-sm text-gray-500">可兑换积分</p><p className="text-2xl font-bold text-purple-600 mt-1">{stats.available_points || 0}</p></div>
-        </div>
-      )}
+    <section className="relative mb-6 overflow-hidden rounded-[30px] bg-gradient-to-r from-slate-900 via-indigo-950 to-indigo-800 p-7 text-white shadow-2xl shadow-indigo-900/15 soft-grid"><div className="absolute right-0 top-0 h-full w-1/2 bg-gradient-to-l from-cyan-400/15 to-transparent" /><div className="relative grid gap-7 lg:grid-cols-[1fr_auto] lg:items-center"><div><div className="mb-3 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-bold"><Sparkles className="h-3.5 w-3.5 text-cyan-300" />当前参与项目</div><h2 className="text-3xl font-black">{stats?.year_name}{stats?.project_name}</h2><div className="mt-4 flex flex-wrap gap-4 text-sm text-indigo-100"><span className="flex items-center gap-2"><CalendarDays className="h-4 w-4" />项目周期：{dateText(currentProject?.start_date)} - {dateText(currentProject?.end_date)}</span><span className="flex items-center gap-2"><Users className="h-4 w-4" />我的小组：{stats?.group_name || '暂未分组'}</span></div></div><div className="grid grid-cols-2 gap-3"><div className="rounded-2xl border border-white/15 bg-white/10 px-6 py-4 text-center backdrop-blur-md"><p className="text-xs text-indigo-200">当前积分</p><p className="mt-1 text-3xl font-black">{stats?.period_points || 0}</p></div><div className="rounded-2xl border border-white/15 bg-white/10 px-6 py-4 text-center backdrop-blur-md"><p className="text-xs text-indigo-200">项目排名</p><p className="mt-1 text-3xl font-black">{stats?.period_rank ? `第${stats.period_rank}名` : '-'}</p></div></div></div></section>
 
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden mb-6">
-        <div className="px-5 py-4 border-b border-gray-100">
-          <h2 className="font-semibold text-gray-900 flex items-center gap-2"><Medal className="w-4 h-4 text-amber-500" /> 各阶段个人积分排名</h2>
-          <p className="text-xs text-gray-500 mt-1">每个阶段的个人积分第一名会在此标注</p>
-        </div>
-        {phases.length ? (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 text-gray-500"><tr><th className="px-4 py-3 text-left">年度</th><th className="px-4 py-3 text-left">项目名称</th><th className="px-4 py-3 text-left">阶段</th><th className="px-4 py-3 text-right">阶段个人积分</th><th className="px-4 py-3 text-right">阶段排名</th></tr></thead>
-              <tbody className="divide-y divide-gray-100">{phases.map((phase) => (
-                <tr key={phase.phase_id} className="hover:bg-gray-50"><td className="px-4 py-3 text-gray-500">{phase.year_name || '-'}</td><td className="px-4 py-3 text-gray-700">{phase.project_name || '-'}</td><td className="px-4 py-3 font-medium text-gray-900">{phase.phase_name}</td><td className="px-4 py-3 text-right font-semibold text-indigo-600">{phase.points || 0}</td><td className="px-4 py-3 text-right">{phase.rank ? <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full font-semibold ${Number(phase.rank) === 1 ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-700'}`}>{Number(phase.rank) === 1 && <Medal className="w-3.5 h-3.5" />}第 {phase.rank} 名</span> : '-'}</td></tr>
-              ))}</tbody>
-            </table>
-          </div>
-        ) : <p className="py-8 text-center text-sm text-gray-400">暂无阶段排名数据</p>}
-      </div>
+    <div className="mb-6 flex w-fit rounded-2xl bg-white/55 p-1 shadow-sm ring-1 ring-white/80 backdrop-blur-xl"><button onClick={() => setSearchParams({})} className={`flex items-center gap-2 rounded-xl px-6 py-3 text-sm font-black ${tab === 'personal' ? 'bg-white text-indigo-700 shadow-md' : 'text-slate-500'}`}><TrendingUp className="h-4 w-4" />个人积分</button><button onClick={() => setSearchParams({ tab: 'team' })} className={`flex items-center gap-2 rounded-xl px-6 py-3 text-sm font-black ${tab === 'team' ? 'bg-white text-violet-700 shadow-md' : 'text-slate-500'}`}><Users className="h-4 w-4" />团队积分</button></div>
 
-      <div className="bg-white rounded-xl border border-gray-200 p-4 mb-6">
-        <div className="flex items-center gap-3 flex-wrap">
-          <select value={yearId} onChange={(e) => setYearId(e.target.value)} className="px-3 py-2 border border-gray-200 rounded-lg text-sm"><option value="">所有年度</option>{years.map((year) => <option key={year.id} value={year.id}>{year.name}</option>)}</select>
-          <select value={projectId} onChange={(e) => setProjectId(e.target.value)} className="px-3 py-2 border border-gray-200 rounded-lg text-sm"><option value="">所有项目</option>{projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select>
-          <select value={phaseId} onChange={(e) => setPhaseId(e.target.value)} className="px-3 py-2 border border-gray-200 rounded-lg text-sm"><option value="">所有阶段</option>{phases.map((phase) => <option key={phase.phase_id} value={phase.phase_id}>{phase.phase_name}</option>)}</select>
-          <select value={category} onChange={(e) => setCategory(e.target.value)} className="px-3 py-2 border border-gray-200 rounded-lg text-sm"><option value="">所有积分类别</option>{CATEGORIES.map((item) => <option key={item} value={item}>{item}</option>)}</select>
-          <button onClick={handleSearch} className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700">筛选</button>
-        </div>
-      </div>
+    {tab === 'personal' ? <>
+      <section className="mb-6"><div className="mb-4 flex items-center justify-between"><div><h2 className="text-xl font-black text-slate-900">阶段积分表现</h2><p className="mt-1 text-xs text-slate-500">每个阶段单独排名，第一名将获得阶段荣誉</p></div></div><div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{phases.map((phase, index) => <div key={phase.phase_id} className={`glass-panel hover-lift rounded-[24px] border p-5 ${Number(phase.rank) === 1 ? 'ring-2 ring-amber-300' : ''}`}><div className="mb-5 flex items-start justify-between"><div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-500 text-sm font-black text-white">{index + 1}</div>{Number(phase.rank) === 1 && <span className="flex items-center gap-1 rounded-full bg-amber-100 px-2 py-1 text-[10px] font-bold text-amber-700"><Medal className="h-3 w-3" />阶段冠军</span>}</div><h3 className="font-black text-slate-900">{phase.phase_name}</h3><p className="mt-1 text-xs text-slate-400">{dateText(phase.start_date)} - {dateText(phase.end_date)}</p><div className="mt-5 grid grid-cols-2 gap-3"><div className="rounded-2xl bg-indigo-50 p-3"><p className="text-[10px] text-indigo-500">我的积分</p><strong className="mt-1 block text-xl text-indigo-700">{phase.points || 0} 分</strong></div><div className="rounded-2xl bg-violet-50 p-3"><p className="text-[10px] text-violet-500">阶段排名</p><strong className="mt-1 block text-xl text-violet-700">{phase.rank ? `第${phase.rank}名` : '-'}</strong></div></div></div>)}</div></section>
 
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <div className="px-5 py-4 border-b border-gray-100"><h2 className="font-semibold text-gray-900">个人积分记录</h2></div>
-        {loading ? <div className="flex items-center justify-center h-48"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600" /></div> : error ? <div className="flex items-center justify-center h-48 text-red-500">{error}</div> : !points.length ? <div className="flex items-center justify-center h-48 text-gray-400">暂无个人积分记录</div> : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 text-gray-500"><tr><th className="px-4 py-3 text-left">年度</th><th className="px-4 py-3 text-left">项目名称</th><th className="px-4 py-3 text-left">所属阶段</th><th className="px-4 py-3 text-left">积分类别</th><th className="px-4 py-3 text-right">积分变化</th><th className="px-4 py-3 text-left">获得时间</th><th className="px-4 py-3 text-left">数据来源</th><th className="px-4 py-3 text-left">备注</th></tr></thead>
-              <tbody className="divide-y divide-gray-100">{points.map((record) => (
-                <tr key={record.id} className="hover:bg-gray-50"><td className="px-4 py-3 text-gray-500">{record.year_name || '-'}</td><td className="px-4 py-3 text-gray-700">{record.project_name || '-'}</td><td className="px-4 py-3 text-gray-500">{record.phase_name || '-'}</td><td className="px-4 py-3 font-medium text-gray-900">{record.category || '-'}</td><td className={`px-4 py-3 text-right font-semibold ${Number(record.points) >= 0 ? 'text-green-600' : 'text-red-600'}`}>{Number(record.points) > 0 ? '+' : ''}{record.points}</td><td className="px-4 py-3 text-gray-500 whitespace-nowrap">{new Date(record.obtained_date || record.created_at).toLocaleString('zh-CN')}</td><td className="px-4 py-3 text-gray-500">{record.data_source || record.source || '-'}</td><td className="px-4 py-3 text-gray-500 max-w-[180px] truncate" title={record.description || ''}>{record.description || '-'}</td></tr>
-              ))}</tbody>
-            </table>
-          </div>
-        )}
-        <div className="p-4 border-t border-gray-100"><Pagination page={page} totalPages={totalPages} onPageChange={setPage} /></div>
-      </div>
-    </AppLayout>
-  )
+      <section className="glass-panel overflow-hidden rounded-[28px] border"><div className="flex flex-col gap-3 border-b border-white/70 p-5 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="font-black text-slate-900">个人积分流水</h2><p className="mt-1 text-xs text-slate-500">系统根据积分明细自动汇总</p></div><div className="flex gap-2"><select value={phaseId} onChange={(event) => { setPage(1); setPhaseId(event.target.value) }} className="rounded-xl border border-indigo-100 bg-white/70 px-3 py-2 text-xs"><option value="">全部阶段</option>{phases.map((phase) => <option key={phase.phase_id} value={phase.phase_id}>{phase.phase_name}</option>)}</select><select value={category} onChange={(event) => { setPage(1); setCategory(event.target.value) }} className="rounded-xl border border-indigo-100 bg-white/70 px-3 py-2 text-xs"><option value="">全部分类</option>{CATEGORIES.map((item) => <option key={item}>{item}</option>)}</select></div></div><div className="overflow-x-auto"><table className="w-full text-sm"><thead className="bg-white/40 text-slate-500"><tr><th className="px-4 py-3 text-left">年度</th><th className="px-4 py-3 text-left">项目名称</th><th className="px-4 py-3 text-left">阶段</th><th className="px-4 py-3 text-left">积分类别</th><th className="px-4 py-3 text-right">积分</th><th className="px-4 py-3 text-left">获得时间</th><th className="px-4 py-3 text-left">备注</th></tr></thead><tbody className="divide-y divide-white/70">{records.map((item) => <tr key={item.id} className="hover:bg-white/35"><td className="px-4 py-3 text-slate-500">{item.year_name || '-'}</td><td className="px-4 py-3">{item.project_name || '-'}</td><td className="px-4 py-3 text-slate-500">{item.phase_name || '-'}</td><td className="px-4 py-3 font-bold">{item.category || '-'}</td><td className={`px-4 py-3 text-right font-black ${Number(item.points) >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>{Number(item.points) > 0 ? '+' : ''}{item.points}</td><td className="px-4 py-3 text-slate-500">{dateText(item.obtained_date || item.created_at)}</td><td className="max-w-48 truncate px-4 py-3 text-slate-500">{item.description || '-'}</td></tr>)}</tbody></table>{!records.length && <p className="py-14 text-center text-sm text-slate-400">暂无积分记录</p>}</div><div className="border-t border-white/70 p-4"><Pagination page={page} totalPages={totalPages} onPageChange={setPage} /></div></section>
+    </> : <>
+      <section className="mb-6 grid gap-4 md:grid-cols-4"><div className="glass-panel rounded-3xl border p-5 md:col-span-1"><p className="text-xs text-slate-500">我的团队</p><h2 className="mt-2 text-2xl font-black">{group.name || '暂未分组'}</h2><p className="mt-4 text-xs text-slate-400">{group.member_count || members.length || 0} 名成员</p></div>{[{label:'成员个人积分合计',value:groupPersonalPoints,color:'text-indigo-600'},{label:'团队任务积分',value:groupTeamPoints,color:'text-violet-600'},{label:'团队最终得分',value:groupFinalScore,color:'text-emerald-600'}].map((item) => <div key={item.label} className="glass-panel rounded-3xl border p-5"><p className="text-xs text-slate-500">{item.label}</p><p className={`mt-3 text-3xl font-black ${item.color}`}>{item.value || 0}</p></div>)}</section>
+      <section className="mb-6 grid gap-6 lg:grid-cols-2"><div className="glass-panel overflow-hidden rounded-[28px] border"><div className="border-b border-white/70 px-5 py-4"><h2 className="font-black">小组成员</h2></div><div className="divide-y divide-white/70">{members.map((item) => <div key={item.student_id} className="flex items-center gap-3 px-5 py-3"><span className="flex h-8 w-8 items-center justify-center rounded-xl bg-indigo-100 text-xs font-black text-indigo-700">{item.rank}</span><span className="flex-1 font-bold">{item.student_name}</span><strong className="text-indigo-600">{item.period_points || 0} 分</strong></div>)}{!members.length && <p className="py-10 text-center text-sm text-slate-400">暂无成员</p>}</div></div><div className="glass-panel overflow-hidden rounded-[28px] border"><div className="border-b border-white/70 px-5 py-4"><h2 className="font-black">团队积分明细</h2></div><div className="divide-y divide-white/70">{teamRecords.map((item) => <div key={item.id} className="flex items-center gap-3 px-5 py-3"><div className="min-w-0 flex-1"><p className="truncate font-bold">{item.category || item.item_name}</p><p className="text-xs text-slate-400">{item.phase_name || '项目级'} · {dateText(item.obtained_date)}</p></div><strong className="text-violet-600">+{item.points} 分</strong></div>)}{!teamRecords.length && <p className="py-10 text-center text-sm text-slate-400">暂无团队积分</p>}</div></div></section>
+    </>}
+  </AppLayout>
 }

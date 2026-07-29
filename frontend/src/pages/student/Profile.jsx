@@ -71,27 +71,29 @@ export default function StudentProfile() {
   return (
     <AppLayout>
       <Toast message={toast?.msg} type={toast?.type} onClose={() => setToast(null)} />
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">个人信息</h1>
-        <p className="text-gray-500 mt-1">查看和编辑个人资料</p>
+      <div className="mb-7">
+        <p className="text-xs font-bold uppercase tracking-[.22em] text-indigo-500">Personal Center</p>
+        <h1 className="mt-2 text-3xl font-black text-slate-900">个人中心</h1>
+        <p className="mt-2 text-sm text-slate-500">管理个人信息，查看所属项目与小组身份</p>
       </div>
 
-      <div className="max-w-2xl">
+      <div className="max-w-5xl">
         {/* Avatar & Name */}
-        <div className="bg-white rounded-xl border border-gray-200 p-6 mb-6">
+        <div className="relative mb-6 overflow-hidden rounded-[30px] border border-white/80 bg-gradient-to-r from-indigo-600 via-violet-600 to-cyan-500 p-7 text-white shadow-2xl shadow-indigo-400/20">
+          <div className="absolute -right-12 -top-16 h-56 w-56 rounded-full bg-white/20 blur-2xl" />
           <div className="flex items-center gap-4">
-            <div className="w-16 h-16 bg-indigo-100 rounded-full flex items-center justify-center">
-              <User className="w-8 h-8 text-indigo-600" />
+            <div className="relative flex h-20 w-20 items-center justify-center rounded-[26px] border border-white/30 bg-white/15 backdrop-blur-md">
+              <User className="h-9 w-9 text-white" />
             </div>
-            <div>
-              <h2 className="text-xl font-bold text-gray-900">{profile.real_name}</h2>
+            <div className="relative">
+              <h2 className="text-2xl font-black text-white">{profile.real_name}</h2>
               <div className="flex items-center gap-2 mt-1">
                 <span className={`text-xs px-2 py-0.5 rounded-full ${
-                  profile.employment_status === 'terminated' ? 'bg-red-50 text-red-500' : 'bg-green-50 text-green-600'
+                  profile.employment_status === 'terminated' ? 'bg-red-400/20 text-red-100' : 'bg-emerald-400/20 text-emerald-100'
                 }`}>
                   {profile.employment_status === 'terminated' ? '已终止' : '在职'}
                 </span>
-                <span className="text-sm text-gray-400">
+                <span className="text-sm text-indigo-100">
                   {[profile.year_name, profile.project_name, profile.group_name].filter(Boolean).join(' · ')}
                 </span>
               </div>
@@ -100,7 +102,7 @@ export default function StudentProfile() {
         </div>
 
         {/* Info Fields */}
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
+        <div className="glass-panel rounded-[30px] border p-7">
           <div className="flex items-center justify-between mb-6">
             <h3 className="font-semibold text-gray-900">个人资料</h3>
             {!editing && (
@@ -110,11 +112,11 @@ export default function StudentProfile() {
             )}
           </div>
 
-          <div className="space-y-4">
+          <div className="grid gap-3 md:grid-cols-2">
             {fields.map((f) => (
-              <div key={f.label} className="flex items-center gap-4">
-                <f.icon className="w-4 h-4 text-gray-400 flex-shrink-0" />
-                <span className="text-sm text-gray-500 w-20">{f.label}</span>
+              <div key={f.label} className="flex items-center gap-3 rounded-2xl bg-white/45 p-3.5">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-50"><f.icon className="h-4 w-4 text-indigo-500" /></div>
+                <span className="w-18 text-xs text-slate-500">{f.label}</span>
                 {editing && f.editable ? (
                   <input
                     type="text"

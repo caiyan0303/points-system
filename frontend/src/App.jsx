@@ -7,13 +7,13 @@ import LoginPage from './pages/LoginPage'
 
 // Student Pages
 import StudentDashboard from './pages/student/Dashboard'
-import StudentTeam from './pages/student/Team'
 import StudentPoints from './pages/student/Points'
 import StudentShop from './pages/student/Shop'
 import StudentRedemptions from './pages/student/Redemptions'
 import StudentHistory from './pages/student/History'
 import StudentProfile from './pages/student/Profile'
 import StudentRuleText from './pages/student/RuleText'
+import StudentRankings from './pages/student/Rankings'
 
 // Admin Pages
 import AdminDashboard from './pages/admin/Dashboard'
@@ -54,8 +54,9 @@ function AppRoutes() {
 
       <Route path="/student/dashboard" element={<ProtectedRoute role="student"><StudentDashboard /></ProtectedRoute>} />
       <Route path="/student/phases" element={<ProtectedRoute role="student"><Navigate to="/student/points" replace /></ProtectedRoute>} />
-      <Route path="/student/team" element={<ProtectedRoute role="student"><StudentTeam /></ProtectedRoute>} />
+      <Route path="/student/team" element={<ProtectedRoute role="student"><Navigate to="/student/points?tab=team" replace /></ProtectedRoute>} />
       <Route path="/student/points" element={<ProtectedRoute role="student"><StudentPoints /></ProtectedRoute>} />
+      <Route path="/student/rankings" element={<ProtectedRoute role="student"><StudentRankings /></ProtectedRoute>} />
       <Route path="/student/shop" element={<ProtectedRoute role="student"><StudentShop /></ProtectedRoute>} />
       <Route path="/student/redemptions" element={<ProtectedRoute role="student"><StudentRedemptions /></ProtectedRoute>} />
       <Route path="/student/history" element={<ProtectedRoute role="student"><StudentHistory /></ProtectedRoute>} />

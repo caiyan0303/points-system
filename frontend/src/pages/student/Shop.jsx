@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import api from '../../api'
 import AppLayout from '../../components/AppLayout'
 import Toast from '../../components/Toast'
-import { X, Package, Clock, ScrollText } from 'lucide-react'
+import { X, Clock, ScrollText, Gift, History, ShoppingBag, Sparkles } from 'lucide-react'
 
 export default function StudentShop() {
   const [products, setProducts] = useState([])
@@ -14,6 +14,7 @@ export default function StudentShop() {
   const [redeemModal, setRedeemModal] = useState(null)
   const [imagePreview, setImagePreview] = useState(null)
   const [processing, setProcessing] = useState(false)
+  const [category, setCategory] = useState('全部商品')
 
   const showToast = (msg, type = 'success') => { setToast({ msg, type }); setTimeout(() => setToast(null), 3000) }
 
@@ -58,20 +59,17 @@ export default function StudentShop() {
     return { text: '立即兑换', disabled: false, color: 'bg-indigo-600 text-white hover:bg-indigo-700' }
   }
 
+  const categories = ['全部商品', ...Array.from(new Set(products.map((item) => item.category).filter(Boolean)))]
+  const filteredProducts = category === '全部商品' ? products : products.filter((item) => item.category === category)
+  const cumulativePoints = Number(stats?.personal_cumulative_points ?? stats?.total_earned ?? stats?.period_points ?? 0)
+  const usedPoints = Math.max(0, cumulativePoints - Number(stats?.available_points || 0))
+
   return (
     <AppLayout>
       <Toast message={toast?.msg} type={toast?.type} onClose={() => setToast(null)} />
-      <div className="mb-6 flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">积分商城</h1>
-          {stats && (
-            <p className="text-gray-500 mt-1">可用积分: <span className="font-semibold text-indigo-600">{stats.available_points || 0}</span></p>
-          )}
-        </div>
-        <Link to="/student/rule-text" className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-indigo-200 bg-indigo-50 text-sm font-medium text-indigo-700 hover:bg-indigo-100">
-          <ScrollText className="w-4 h-4" /> 查看积分规则
-        </Link>
-      </div>
+      <div className="mb-7"><p className="text-xs font-bold uppercase tracking-[.22em] text-violet-500">Rewards Mall</p><h1 className="mt-2 text-3xl font-black text-slate-900">积分商城</h1><p className="mt-2 text-sm text-slate-500">让积分从数字转化为真实的成长奖励</p></div>
+      <section className="relative mb-6 overflow-hidden rounded-[30px] bg-gradient-to-br from-fuchsia-500 via-violet-600 to-indigo-700 p-7 text-white shadow-2xl shadow-violet-400/25"><div className="absolute -right-12 -top-16 h-64 w-64 rounded-full bg-white/20 blur-2xl" /><div className="relative grid gap-6 md:grid-cols-[1fr_auto] md:items-center"><div><div className="mb-3 inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1 text-xs font-bold"><Sparkles className="h-3.5 w-3.5 text-amber-200" />我的积分价值</div><p className="text-sm text-violet-100">当前可兑换积分</p><p className="mt-1 text-5xl font-black">{stats?.available_points || 0}<span className="ml-1 text-base">分</span></p></div><div className="grid grid-cols-2 gap-3"><div className="rounded-2xl border border-white/15 bg-white/10 px-5 py-4 backdrop-blur-md"><p className="text-xs text-violet-100">个人累计积分</p><strong className="mt-1 block text-2xl">{cumulativePoints}</strong></div><div className="rounded-2xl border border-white/15 bg-white/10 px-5 py-4 backdrop-blur-md"><p className="text-xs text-violet-100">已使用积分</p><strong className="mt-1 block text-2xl">{usedPoints}</strong></div></div></div></section>
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3"><div className="flex flex-wrap gap-2">{categories.map((item) => <button key={item} onClick={() => setCategory(item)} className={`rounded-full px-4 py-2 text-xs font-bold transition ${category === item ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-300/40' : 'glass-chip text-slate-600'}`}>{item}</button>)}</div><div className="flex gap-2"><Link to="/student/rule-text" className="glass-chip inline-flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-bold text-indigo-700"><ScrollText className="h-4 w-4" />积分规则</Link><Link to="/student/redemptions" className="glass-chip inline-flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-bold text-violet-700"><History className="h-4 w-4" />兑换记录</Link></div></div>
 
       {loading ? (
         <div className="flex items-center justify-center h-48">
@@ -79,19 +77,19 @@ export default function StudentShop() {
         </div>
       ) : error ? (
         <div className="flex items-center justify-center h-48 text-red-400">{error}</div>
-      ) : products.length === 0 ? (
+      ) : filteredProducts.length === 0 ? (
         <div className="flex items-center justify-center h-48 text-gray-400">暂无商品</div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {products.map((p) => {
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+          {filteredProducts.map((p) => {
             const btn = getButtonState(p)
             return (
-              <div key={p.id} className="bg-white rounded-xl border border-gray-200 p-5 hover:shadow-md transition-shadow">
+              <div key={p.id} className="glass-panel hover-lift overflow-hidden rounded-[26px] border p-4">
                 {p.image_url ? (
                   <button
                     type="button"
                     onClick={() => setImagePreview(p)}
-                    className="group relative block w-full h-32 bg-gray-100 rounded-lg overflow-hidden mb-3 cursor-zoom-in focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    className="group relative mb-4 block h-48 w-full cursor-zoom-in overflow-hidden rounded-[20px] bg-gradient-to-br from-indigo-50 to-violet-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     aria-label={`查看${p.name}大图`}
                   >
                     <img src={p.image_url} alt={p.name} className="w-full h-full object-cover transition-transform group-hover:scale-105" />
@@ -100,11 +98,11 @@ export default function StudentShop() {
                     </span>
                   </button>
                 ) : (
-                  <div className="w-full h-32 bg-gray-100 rounded-lg flex items-center justify-center mb-3">
-                    <Package className="w-10 h-10 text-gray-400" />
+                  <div className="mb-4 flex h-48 w-full items-center justify-center rounded-[20px] bg-gradient-to-br from-indigo-50 to-violet-100">
+                    <Gift className="h-14 w-14 text-indigo-300" />
                   </div>
                 )}
-                <h3 className="font-semibold text-gray-900 text-sm mb-2">{p.name}</h3>
+                <div className="mb-2 flex items-center justify-between gap-2"><h3 className="font-black text-slate-900">{p.name}</h3>{p.category && <span className="rounded-full bg-indigo-50 px-2 py-1 text-[10px] font-bold text-indigo-600">{p.category}</span>}</div>
                 <div className="space-y-1 text-sm mb-3">
                   <div className="flex justify-between">
                     <span className="text-gray-500">所需积分</span>
@@ -131,8 +129,8 @@ export default function StudentShop() {
                 <button
                   onClick={() => !btn.disabled && setRedeemModal(p)}
                   disabled={btn.disabled}
-                  className={`w-full py-2 rounded-lg text-sm font-medium transition-colors ${btn.color} disabled:opacity-70 disabled:cursor-not-allowed`}
-                >{btn.text}</button>
+                  className={`flex w-full items-center justify-center gap-2 rounded-2xl py-3 text-sm font-black transition-colors ${btn.color} disabled:cursor-not-allowed disabled:opacity-70`}
+                ><ShoppingBag className="h-4 w-4" />{btn.text}</button>
               </div>
             )
           })}
