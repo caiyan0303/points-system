@@ -76,7 +76,7 @@ function StudentLayout({ children, user, logout }) {
   const navigate = useNavigate()
   const [mobileOpen, setMobileOpen] = useState(false)
   const initials = (user?.real_name || '学员').slice(-2)
-  const isActive = (path) => location.pathname === path || (path !== '/student/dashboard' && location.pathname.startsWith(`${path}/`))
+  const isActive = (path) => location.pathname === path || (path === '/student/points' && location.pathname.startsWith('/student/projects/')) || (path !== '/student/dashboard' && location.pathname.startsWith(`${path}/`))
   const handleLogout = () => { logout(); navigate('/login') }
 
   return <div className="student-shell min-h-screen text-slate-900">

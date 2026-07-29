@@ -7,7 +7,8 @@ import LoginPage from './pages/LoginPage'
 
 // Student Pages
 import StudentDashboard from './pages/student/Dashboard'
-import StudentPoints from './pages/student/Points'
+import StudentProjects from './pages/student/Projects'
+import StudentProjectWorkspace from './pages/student/ProjectWorkspace'
 import StudentShop from './pages/student/Shop'
 import StudentRedemptions from './pages/student/Redemptions'
 import StudentHistory from './pages/student/History'
@@ -54,8 +55,11 @@ function AppRoutes() {
 
       <Route path="/student/dashboard" element={<ProtectedRoute role="student"><StudentDashboard /></ProtectedRoute>} />
       <Route path="/student/phases" element={<ProtectedRoute role="student"><Navigate to="/student/points" replace /></ProtectedRoute>} />
-      <Route path="/student/team" element={<ProtectedRoute role="student"><Navigate to="/student/points?tab=team" replace /></ProtectedRoute>} />
-      <Route path="/student/points" element={<ProtectedRoute role="student"><StudentPoints /></ProtectedRoute>} />
+      <Route path="/student/team" element={<ProtectedRoute role="student"><Navigate to="/student/points" replace /></ProtectedRoute>} />
+      <Route path="/student/points" element={<ProtectedRoute role="student"><StudentProjects /></ProtectedRoute>} />
+      <Route path="/student/projects/:projectId" element={<ProtectedRoute role="student"><StudentProjectWorkspace /></ProtectedRoute>} />
+      <Route path="/student/projects/:projectId/personal" element={<ProtectedRoute role="student"><StudentProjectWorkspace view="personal" /></ProtectedRoute>} />
+      <Route path="/student/projects/:projectId/team" element={<ProtectedRoute role="student"><StudentProjectWorkspace view="team" /></ProtectedRoute>} />
       <Route path="/student/rankings" element={<ProtectedRoute role="student"><StudentRankings /></ProtectedRoute>} />
       <Route path="/student/shop" element={<ProtectedRoute role="student"><StudentShop /></ProtectedRoute>} />
       <Route path="/student/redemptions" element={<ProtectedRoute role="student"><StudentRedemptions /></ProtectedRoute>} />

@@ -845,9 +845,10 @@ async function adminExtendedRoutes(request, pathname, url) {
 
 async function studentRoutes(request, pathname, url) {
   const student=await requireUser(request,'student'); if(student instanceof Response)return student
+  const requestedProjectId=numberOrNull(url.searchParams.get('project_id'))
   const enrollment=await one(`SELECT pe.*,y.name AS year_name,p.name AS project_name,g.name AS group_name FROM project_enrollments pe
     JOIN academic_years y ON y.id=pe.year_id JOIN training_projects p ON p.id=pe.project_id LEFT JOIN groups g ON g.id=pe.group_id
-    WHERE pe.student_id=$1 ORDER BY pe.year_id DESC LIMIT 1`,[student.id])
+    WHERE pe.student_id=$1 AND ($2::bigint IS NULL OR pe.project_id=$2) ORDER BY pe.year_id DESC LIMIT 1`,[student.id,requestedProjectId])
   if(pathname==='/api/student/dashboard'&&request.method==='GET'){
     const balance=await balanceFor(student.id),projectId=enrollment?.project_id||student.project_id||null
     const currentPhase=projectId?await one("SELECT * FROM phases WHERE project_id=$1 AND status IN ('进行中','in_progress') ORDER BY id DESC LIMIT 1",[projectId]):null
