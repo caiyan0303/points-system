@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import api from '../../api'
 import AppLayout from '../../components/AppLayout'
 import Pagination from '../../components/Pagination'
@@ -7,7 +7,7 @@ import InformationPageTabs from '../../components/InformationPageTabs'
 import { useAdminScope } from '../../contexts/AdminScopeContext'
 import {
   Search, Award, X, UserPlus, Edit, Ban, RefreshCw,
-  Eye, Upload, Download
+  Eye, Upload, Download, CheckCircle2, FileSpreadsheet, LoaderCircle
 } from 'lucide-react'
 import * as XLSX from 'xlsx'
 const CATEGORIES = [
@@ -46,6 +46,11 @@ export default function AdminStudents() {
   const [deleteConfirm, setDeleteConfirm] = useState(false)
   const [batchData, setBatchData] = useState([])
   const [batchPreview, setBatchPreview] = useState(null)
+  const [selectedFileName, setSelectedFileName] = useState('')
+  const [isParsingFile, setIsParsingFile] = useState(false)
+  const [isDraggingFile, setIsDraggingFile] = useState(false)
+  const [isImporting, setIsImporting] = useState(false)
+  const fileInputRef = useRef(null)
 
   const [pointForm, setPointForm] = useState({ points: '', category: '线上学习', description: '', phase_id: '' })
   const [createForm, setCreateForm] = useState({ real_name: '', department: '', system: '', level1_dept: '', position: '', year_id: '', project_id: '', group_id: '', group_name: '' })
@@ -198,29 +203,43 @@ export default function AdminStudents() {
   }
 
   // Batch import
-  const handleFileUpload = (e) => {
-    const file = e.target.files?.[0]; if (!file) return
-    const reader = new FileReader()
-    reader.onload = (ev) => {
-      try {
-        let parsed
-        if (file.name.endsWith('.json')) {
-          parsed = JSON.parse(ev.target.result)
-          if (!Array.isArray(parsed)) parsed = [parsed]
-        } else if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
-          const wb = XLSX.read(ev.target.result, { type: 'array' })
-          const ws = wb.Sheets[wb.SheetNames[0]]
-          parsed = XLSX.utils.sheet_to_json(ws, { defval: '' })
-        } else {
-          const lines = ev.target.result.split('\n').filter(l => l.trim())
-          const headers = lines[0].split(',').map(h => h.trim())
-          parsed = lines.slice(1).map(line => {
-            const vals = line.split(',').map(v => v.trim())
-            const obj = {}; headers.forEach((h, i) => { obj[h] = vals[i] || '' })
-            return obj
-          })
-        }
-                // 归一化字段名（中文 → 英文）
+  const resetBatchImport = () => {
+    setBatchModal(false)
+    setBatchData([])
+    setBatchPreview(null)
+    setSelectedFileName('')
+    setIsParsingFile(false)
+    setIsDraggingFile(false)
+    setIsImporting(false)
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
+  const parseImportFile = async (file) => {
+    const extension = file.name.split('.').pop()?.toLowerCase()
+    if (!['json', 'csv', 'xlsx', 'xls'].includes(extension)) {
+      showToast('请选择 Excel、CSV 或 JSON 文件', 'error')
+      return
+    }
+
+    setSelectedFileName(file.name)
+    setBatchData([])
+    setBatchPreview(null)
+    setIsParsingFile(true)
+
+    // 先让“正在解析”状态显示出来，再进行工作簿解析。
+    await new Promise(resolve => window.requestAnimationFrame(() => setTimeout(resolve, 0)))
+    try {
+      let parsed
+      if (extension === 'json') {
+        parsed = JSON.parse(await file.text())
+        if (!Array.isArray(parsed)) parsed = [parsed]
+      } else {
+        const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array', dense: true })
+        const worksheet = workbook.Sheets[workbook.SheetNames[0]]
+        parsed = XLSX.utils.sheet_to_json(worksheet, { defval: '', raw: false })
+      }
+
+        // 归一化字段名（中文 → 英文）
         const fieldMap = {
           '姓名': 'real_name',
           '部门': 'department', '体系': 'system', '一级部门': 'level1_dept', '职位信息': 'position', '职位': 'position',
@@ -243,22 +262,40 @@ export default function AdminStudents() {
           }
           return new_r
         })
-        setBatchData(parsed); setBatchPreview({ total: parsed.length, valid: parsed.length, invalid: 0 })
-      } catch { showToast('文件解析失败', 'error') }
-    }
-    if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
-      reader.readAsArrayBuffer(file)
-    } else {
-      reader.readAsText(file)
+      setBatchData(parsed)
+      setBatchPreview({ total: parsed.length, valid: parsed.length, invalid: 0 })
+    } catch {
+      setSelectedFileName('')
+      showToast('文件解析失败，请确认文件格式和表头', 'error')
+    } finally {
+      setIsParsingFile(false)
+      if (fileInputRef.current) fileInputRef.current.value = ''
     }
   }
 
+  const handleFileUpload = (event) => {
+    const file = event.target.files?.[0]
+    if (file) parseImportFile(file)
+  }
+
+  const handleFileDrop = (event) => {
+    event.preventDefault()
+    setIsDraggingFile(false)
+    const file = event.dataTransfer.files?.[0]
+    if (file && !isParsingFile) parseImportFile(file)
+  }
+
   const handleBatchImport = async () => {
+    if (!batchData.length || isImporting) return
+    setIsImporting(true)
     try {
       const { data } = await api.post('/api/admin/students/batch', { rows: batchData })
       showToast(data.message || `成功导入 ${batchData.length} 名学员`)
-      setBatchModal(false); setBatchData([]); setBatchPreview(null); fetchStudents()
-    } catch (err) { showToast(err.response?.data?.detail || '导入失败', 'error') }
+      resetBatchImport(); fetchStudents()
+    } catch (err) {
+      showToast(err.response?.data?.detail || '导入失败', 'error')
+      setIsImporting(false)
+    }
   }
 
   // Download the maintained Excel template from the public assets.
@@ -501,7 +538,7 @@ export default function AdminStudents() {
       {batchModal && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-2xl w-full p-6">
-            <div className="flex items-center justify-between mb-4"><h3 className="text-lg font-semibold">批量导入学员</h3><button onClick={() => { setBatchModal(false); setBatchData([]); setBatchPreview(null) }} className="p-1 hover:bg-gray-100 rounded-lg"><X className="w-5 h-5" /></button></div>
+            <div className="flex items-center justify-between mb-4"><h3 className="text-lg font-semibold">批量导入学员</h3><button onClick={resetBatchImport} className="p-1 hover:bg-gray-100 rounded-lg"><X className="w-5 h-5" /></button></div>
             <div className="flex items-center gap-3 mb-3">
               <button onClick={downloadTemplate} className="flex items-center gap-2 px-3 py-2 text-sm border border-dashed border-indigo-300 text-indigo-600 rounded-lg hover:bg-indigo-50">
                 <Download className="w-4 h-4" /> 下载导入模版
@@ -511,11 +548,22 @@ export default function AdminStudents() {
             <div className="mb-4 rounded-lg bg-indigo-50 px-3 py-2 text-sm text-indigo-700">
               导入后会自动创建或关联小组，并为新学员开通中文姓名账号。同一项目已存在的学员会自动跳过；同一年度不能参加两个项目，跨年度参加其他项目时会新增项目关联。
             </div>
-            <div className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center mb-4">
-              <Upload className="w-10 h-10 text-gray-400 mx-auto mb-3" />
-              <p className="text-sm text-gray-500 mb-2">拖放文件或点击上传</p>
-              <input type="file" accept=".json,.csv,.xlsx,.xls" onChange={handleFileUpload} className="block mx-auto text-sm" />
-            </div>
+            <input ref={fileInputRef} type="file" accept=".json,.csv,.xlsx,.xls" onChange={handleFileUpload} className="sr-only" />
+            <button
+              type="button"
+              disabled={isParsingFile}
+              onClick={() => fileInputRef.current?.click()}
+              onDragEnter={(event) => { event.preventDefault(); setIsDraggingFile(true) }}
+              onDragOver={(event) => { event.preventDefault(); setIsDraggingFile(true) }}
+              onDragLeave={(event) => { event.preventDefault(); setIsDraggingFile(false) }}
+              onDrop={handleFileDrop}
+              className={`mb-4 flex min-h-48 w-full cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed px-6 py-8 text-center transition focus:outline-none focus:ring-4 focus:ring-indigo-100 disabled:cursor-wait ${isDraggingFile ? 'border-indigo-500 bg-indigo-50' : selectedFileName ? 'border-emerald-300 bg-emerald-50/60' : 'border-gray-300 bg-gray-50/40 hover:border-indigo-400 hover:bg-indigo-50/60'}`}
+            >
+              {isParsingFile ? <LoaderCircle className="mb-3 h-11 w-11 animate-spin text-indigo-600" /> : selectedFileName ? <CheckCircle2 className="mb-3 h-11 w-11 text-emerald-500" /> : <Upload className="mb-3 h-11 w-11 text-gray-400" />}
+              <p className="text-base font-semibold text-gray-700">{isParsingFile ? '正在读取并解析文件…' : selectedFileName ? '文件读取完成' : '点击此区域选择文件'}</p>
+              <p className="mt-1 text-sm text-gray-500">{selectedFileName || '也可以将 Excel 文件直接拖放到这里'}</p>
+              {!isParsingFile && <span className="mt-4 inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm"><FileSpreadsheet className="h-4 w-4" />{selectedFileName ? '重新选择文件' : '选择 Excel 文件'}</span>}
+            </button>
             {batchPreview && (
               <div className="mb-4">
                 <div className="flex items-center gap-4 text-sm text-gray-500 mb-2">
@@ -536,7 +584,7 @@ export default function AdminStudents() {
                 )}
               </div>
             )}
-            <div className="flex gap-3"><button onClick={() => { setBatchModal(false); setBatchData([]); setBatchPreview(null) }} className="flex-1 py-2.5 text-sm border border-gray-200 rounded-lg hover:bg-gray-50">取消</button><button onClick={handleBatchImport} disabled={batchData.length === 0} className="flex-1 py-2.5 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50">确认导入 ({batchData.length} 条)</button></div>
+            <div className="flex gap-3"><button onClick={resetBatchImport} disabled={isImporting} className="flex-1 py-2.5 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50">取消</button><button onClick={handleBatchImport} disabled={batchData.length === 0 || isParsingFile || isImporting} className="flex-1 py-2.5 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50">{isImporting ? '正在导入…' : `确认导入 (${batchData.length} 条)`}</button></div>
           </div>
         </div>
       )}
