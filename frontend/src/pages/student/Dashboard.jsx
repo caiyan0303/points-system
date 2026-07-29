@@ -17,6 +17,8 @@ export default function StudentDashboard() {
   const [phaseDetail, setPhaseDetail] = useState(null)
   const [teamData, setTeamData] = useState(null)
   const [rankingTab, setRankingTab] = useState('personal')
+  const [activityTab, setActivityTab] = useState('personal')
+  const [currentProjectId, setCurrentProjectId] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
@@ -25,11 +27,15 @@ export default function StudentDashboard() {
       api.get('/api/student/dashboard'),
       api.get('/api/student/phase-overview'),
       api.get('/api/student/team'),
-    ]).then(async ([dashboardRes, phaseRes, teamRes]) => {
+      api.get('/api/common/projects'),
+    ]).then(async ([dashboardRes, phaseRes, teamRes, projectRes]) => {
       const nextPhases = phaseRes.data?.phases || []
       setData(dashboardRes.data)
       setPhases(nextPhases)
       setTeamData(teamRes.data)
+      const projectItems = projectRes.data?.items || projectRes.data || []
+      const selectedProject = projectItems.find((item) => item.name === dashboardRes.data?.project_name)
+      setCurrentProjectId(selectedProject?.id || null)
       const current = nextPhases.find((item) => ['进行中', 'in_progress'].includes(item.status)) || nextPhases[0]
       if (current?.phase_id) {
         const detail = await api.get(`/api/student/phases/${current.phase_id}`)
@@ -42,6 +48,10 @@ export default function StudentDashboard() {
   const teamTop = useMemo(() => (teamData?.all_groups || phaseDetail?.group_rankings || []).slice(0, 3), [teamData, phaseDetail])
   const currentPhase = phases.find((item) => ['进行中', 'in_progress'].includes(item.status)) || phases[0]
   const rankingRows = rankingTab === 'personal' ? personalTop : teamTop
+  const personalActivities = data?.recent_points || []
+  const teamActivities = teamData?.team_point_records || []
+  const activityRows = activityTab === 'personal' ? personalActivities : teamActivities
+  const projectViewPath = (view) => currentProjectId ? `/student/projects/${currentProjectId}/${view}` : '/student/points'
 
   if (loading) return <AppLayout><div className="flex h-72 items-center justify-center"><div className="h-10 w-10 animate-spin rounded-full border-2 border-indigo-200 border-b-indigo-600" /></div></AppLayout>
   if (error || !data) return <AppLayout><div className="glass-panel rounded-3xl p-12 text-center text-slate-500">{error || '暂无数据'}</div></AppLayout>
@@ -69,7 +79,7 @@ export default function StudentDashboard() {
 
     <section className="grid gap-5 lg:grid-cols-[1.25fr_.75fr]">
       <div className="glass-panel overflow-hidden rounded-[30px] border shadow-xl shadow-indigo-100/40">
-        <div className="flex flex-col gap-4 border-b border-white/80 px-6 pt-6 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-xs font-bold uppercase tracking-[.18em] text-indigo-500">Project Ranking</p><h2 className="mt-1 text-xl font-black text-slate-900">排行榜</h2></div><button onClick={() => navigate(rankingTab === 'personal' ? '/student/rankings' : '/student/rankings?tab=team')} className="mb-4 inline-flex items-center gap-1 text-xs font-bold text-indigo-600">查看全部 <ArrowRight className="h-3.5 w-3.5" /></button></div>
+        <div className="flex flex-col gap-4 border-b border-white/80 px-6 pt-6 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-xs font-bold uppercase tracking-[.18em] text-indigo-500">Project Ranking</p><h2 className="mt-1 text-xl font-black text-slate-900">排行榜</h2></div><button onClick={() => navigate(projectViewPath(rankingTab === 'personal' ? 'personal' : 'team'))} className="mb-4 inline-flex items-center gap-1 text-xs font-bold text-indigo-600">进入项目详情 <ArrowRight className="h-3.5 w-3.5" /></button></div>
         <div className="relative mx-6 mt-4 grid grid-cols-2 rounded-2xl bg-slate-100/80 p-1">
           <span className={`absolute bottom-1 top-1 w-[calc(50%-4px)] rounded-xl bg-white shadow-md transition-transform duration-300 ${rankingTab === 'team' ? 'translate-x-[100%]' : 'translate-x-0'}`} />
           <button onClick={() => setRankingTab('personal')} className={`relative z-10 flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-black transition ${rankingTab === 'personal' ? 'text-indigo-700' : 'text-slate-400'}`}><Award className="h-4 w-4" />阶段个人榜</button>
@@ -85,7 +95,7 @@ export default function StudentDashboard() {
         </div>
       </div>
 
-      <div className="glass-panel rounded-[30px] border p-6 shadow-xl shadow-indigo-100/40"><div className="mb-5 flex items-center justify-between"><div><p className="text-xs font-bold uppercase tracking-[.18em] text-cyan-600">Project Feed</p><h2 className="mt-1 text-xl font-black text-slate-900">项目动态</h2></div><button onClick={() => navigate('/student/points')} className="text-xs font-bold text-indigo-600">查看全部</button></div><div className="space-y-3">{data.recent_points?.length ? data.recent_points.slice(0, 5).map((item) => <div key={item.id} className="group flex items-start gap-3 rounded-2xl p-3 transition hover:bg-white/70"><div className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${Number(item.points) >= 0 ? 'bg-indigo-100 text-indigo-600' : 'bg-rose-100 text-rose-600'}`}><TrendingUp className="h-4 w-4" /></div><div className="min-w-0 flex-1"><div className="flex items-start justify-between gap-2"><p className="truncate text-sm font-black text-slate-800">{item.category || item.description || '个人积分'}</p><span className="shrink-0 text-[10px] text-slate-400">{new Date(item.created_at).toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' })}</span></div><p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-400">积分已更新，本次获得 <strong className={Number(item.points) >= 0 ? 'text-indigo-600' : 'text-rose-600'}>{Number(item.points) > 0 ? '+' : ''}{item.points} 分</strong></p></div></div>) : <p className="py-12 text-center text-sm text-slate-400">暂无项目动态</p>}</div></div>
+      <div className="glass-panel rounded-[30px] border p-6 shadow-xl shadow-indigo-100/40"><div className="mb-4 flex items-start justify-between"><div><p className="text-xs font-bold uppercase tracking-[.18em] text-cyan-600">Points Ledger</p><h2 className="mt-1 text-xl font-black text-slate-900">积分流水动态</h2></div><button onClick={() => navigate(projectViewPath(activityTab === 'personal' ? 'personal' : 'team'))} className="inline-flex items-center gap-1 text-xs font-bold text-indigo-600">查看全部 <ArrowRight className="h-3.5 w-3.5" /></button></div><div className="relative mb-4 grid grid-cols-2 rounded-2xl bg-slate-100/80 p-1"><span className={`absolute bottom-1 top-1 w-[calc(50%-4px)] rounded-xl bg-white shadow-sm transition-transform ${activityTab === 'team' ? 'translate-x-[100%]' : 'translate-x-0'}`} /><button onClick={() => setActivityTab('personal')} className={`relative z-10 rounded-xl px-2 py-2 text-xs font-black ${activityTab === 'personal' ? 'text-indigo-700' : 'text-slate-400'}`}>个人积分流水</button><button onClick={() => setActivityTab('team')} className={`relative z-10 rounded-xl px-2 py-2 text-xs font-black ${activityTab === 'team' ? 'text-violet-700' : 'text-slate-400'}`}>团队积分流水</button></div><div className="space-y-2">{activityRows.length ? activityRows.slice(0, 5).map((item) => { const value = Number(item.points || 0); const dateValue = item.created_at || item.obtained_date; return <div key={`${activityTab}-${item.id}`} className="group flex items-start gap-3 rounded-2xl p-3 transition hover:bg-white/70"><div className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${activityTab === 'team' ? 'bg-violet-100 text-violet-600' : value >= 0 ? 'bg-indigo-100 text-indigo-600' : 'bg-rose-100 text-rose-600'}`}>{activityTab === 'team' ? <Users className="h-4 w-4" /> : <TrendingUp className="h-4 w-4" />}</div><div className="min-w-0 flex-1"><div className="flex items-start justify-between gap-2"><p className="truncate text-sm font-black text-slate-800">{item.category || item.item_name || item.description || (activityTab === 'team' ? '团队积分' : '个人积分')}</p><span className="shrink-0 text-[10px] text-slate-400">{dateValue ? new Date(dateValue).toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' }) : '-'}</span></div><p className="mt-1 text-xs text-slate-400">{item.phase_name || (activityTab === 'team' ? '团队任务积分' : '个人积分已更新')} · <strong className={activityTab === 'team' ? 'text-violet-600' : value >= 0 ? 'text-indigo-600' : 'text-rose-600'}>{value > 0 ? '+' : ''}{value} 分</strong></p></div></div> }) : <p className="py-10 text-center text-sm text-slate-400">暂无{activityTab === 'personal' ? '个人' : '团队'}积分流水</p>}</div></div>
     </section>
   </AppLayout>
 }

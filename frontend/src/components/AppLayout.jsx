@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import {
-  Award, Calendar, ChevronDown, ClipboardCheck, FileText, Gift,
+  Calendar, ChevronDown, ClipboardCheck, FileText, Gift,
   LayoutDashboard, LogOut, Menu, Package, PlusCircle, ScrollText,
   Shield, ShoppingBag, Sparkles, Star, TrendingUp, User, Users, UsersRound, X,
   Layers,
@@ -36,7 +36,6 @@ const adminGroups = [
 const studentNav = [
   { path: '/student/dashboard', icon: LayoutDashboard, label: '首页' },
   { path: '/student/points', icon: Sparkles, label: '我的项目' },
-  { path: '/student/rankings', icon: Award, label: '项目排行榜' },
   { path: '/student/shop', icon: ShoppingBag, label: '积分商城' },
   { path: '/student/profile', icon: User, label: '个人中心' },
 ]
