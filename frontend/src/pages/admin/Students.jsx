@@ -3,6 +3,7 @@ import api from '../../api'
 import AppLayout from '../../components/AppLayout'
 import Pagination from '../../components/Pagination'
 import Toast from '../../components/Toast'
+import { useAdminScope } from '../../contexts/AdminScopeContext'
 import {
   Search, Award, X, UserPlus, Edit, Ban, CheckCircle, RefreshCw,
   Eye, Upload, Download, Minus, Plus
@@ -14,6 +15,7 @@ const CATEGORIES = [
 ]
 
 export default function AdminStudents() {
+  const { yearId: scopeYearId, projectId: scopeProjectId, setYearId: setScopeYearId, setProjectId: setScopeProjectId } = useAdminScope()
   const [students, setStudents] = useState([])
   const [years, setYears] = useState([])
   const [allProjects, setAllProjects] = useState([])
@@ -22,8 +24,8 @@ export default function AdminStudents() {
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [keyword, setKeyword] = useState('')
-  const [yearId, setYearId] = useState('')
-  const [projectId, setProjectId] = useState('')
+  const [yearId, setYearId] = useState(scopeYearId)
+  const [projectId, setProjectId] = useState(scopeProjectId)
   const [groupId, setGroupId] = useState('')
   const [accountStatus, setAccountStatus] = useState('')
   const [employmentStatus, setEmploymentStatus] = useState('')
@@ -82,6 +84,14 @@ export default function AdminStudents() {
 
   useEffect(() => { fetchStudents() }, [page])
   useEffect(() => {
+    setYearId(scopeYearId)
+    setProjectId(scopeProjectId)
+  }, [scopeYearId, scopeProjectId])
+  useEffect(() => {
+    if (page !== 1) setPage(1)
+    else fetchStudents()
+  }, [yearId, projectId])
+  useEffect(() => {
     api.get('/api/common/years').then(({ data }) => setYears(data || []))
     api.get('/api/common/projects').then(({ data }) => setAllProjects(data || []))
     api.get('/api/admin/groups').then(({ data }) => setGroups(data || []))
@@ -89,7 +99,7 @@ export default function AdminStudents() {
   }, [])
 
   const handleSearch = (e) => { e.preventDefault(); if (page !== 1) setPage(1); else fetchStudents() }
-  const handleReset = () => { setKeyword(''); setYearId(''); setProjectId(''); setGroupId(''); setAccountStatus(''); setEmploymentStatus(''); setPage(1); setTimeout(fetchStudents, 0) }
+  const handleReset = () => { setKeyword(''); setGroupId(''); setAccountStatus(''); setEmploymentStatus(''); setPage(1); setTimeout(fetchStudents, 0) }
 
   // Selection handlers
   const toggleSelect = (id) => {
@@ -294,11 +304,11 @@ export default function AdminStudents() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input type="text" value={keyword} onChange={(e) => setKeyword(e.target.value)} placeholder="搜索姓名、部门、职位..." className="w-48 pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500" />
           </div>
-          <select value={yearId} onChange={(e) => { setYearId(e.target.value); setProjectId('') }} className="px-3 py-2.5 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500">
+          <select value={yearId} onChange={(e) => { setYearId(e.target.value); setProjectId(''); setScopeYearId(e.target.value) }} className="px-3 py-2.5 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500">
             <option value="">所有年度</option>
             {years.map(y => <option key={y.id} value={y.id}>{y.name}</option>)}
           </select>
-          <select value={projectId} onChange={(e) => setProjectId(e.target.value)} className="px-3 py-2.5 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500">
+          <select value={projectId} onChange={(e) => { setProjectId(e.target.value); setScopeProjectId(e.target.value) }} className="px-3 py-2.5 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500">
             <option value="">所有项目</option>
             {filteredProjects.map(p => <option key={p.id} value={p.id}>{p.name}（{years.find(y => y.id === p.year_id)?.name || p.year_id}）</option>)}
           </select>
@@ -368,9 +378,9 @@ export default function AdminStudents() {
                   <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">邮箱</th>
                   <th className="text-center px-4 py-3 text-xs font-medium text-gray-500">在职</th>
                   <th className="text-center px-4 py-3 text-xs font-medium text-gray-500">账号状态</th>
-                  <th className="text-right px-4 py-3 text-xs font-medium text-gray-500">本期积分</th>
-                  <th className="text-right px-4 py-3 text-xs font-medium text-gray-500">总获得</th>
-                  <th className="text-right px-4 py-3 text-xs font-medium text-gray-500">可用</th>
+                  <th className="text-right px-4 py-3 text-xs font-medium text-indigo-600">当前项目积分</th>
+                  <th className="text-right px-4 py-3 text-xs font-medium text-emerald-600">可兑换积分</th>
+                  <th className="text-right px-4 py-3 text-xs font-medium text-gray-500">历史累计积分</th>
                   <th className="text-center px-4 py-3 text-xs font-medium text-gray-500">操作</th>
                 </tr>
               </thead>
@@ -395,9 +405,9 @@ export default function AdminStudents() {
                     <td className="px-4 py-3 text-center">
                       <span className={`text-xs px-2 py-0.5 rounded-full ${s.account_status === '启用' ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-500'}`}>{s.account_status}</span>
                     </td>
-                    <td className="px-4 py-3 text-sm font-semibold text-indigo-600 text-right">{s.period_points}</td>
-                    <td className="px-4 py-3 text-sm text-gray-700 text-right">{s.total_earned}</td>
-                    <td className="px-4 py-3 text-sm font-semibold text-green-600 text-right">{s.available_points}</td>
+                    <td className="px-4 py-3 text-sm font-black text-indigo-600 text-right">{s.period_points || 0}</td>
+                    <td className="px-4 py-3 text-sm font-black text-emerald-600 text-right">{s.available_points || 0}</td>
+                    <td className="px-4 py-3 text-sm text-gray-500 text-right">{s.total_earned || 0}</td>
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-center gap-1">
                         <button onClick={() => openViewDetail(s)} className="px-2 py-1 text-xs bg-gray-50 text-gray-600 rounded hover:bg-gray-100" title="详情"><Eye className="w-3 h-3" /></button>

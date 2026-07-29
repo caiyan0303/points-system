@@ -3,7 +3,8 @@ import api from '../../api'
 import AppLayout from '../../components/AppLayout'
 import Toast from '../../components/Toast'
 import PointsPageTabs from '../../components/PointsPageTabs'
-import { Plus, Upload, X, Trash2, Download, MessageCircle, Send, CheckCircle2 } from 'lucide-react'
+import { useAdminScope } from '../../contexts/AdminScopeContext'
+import { Plus, Upload, X, Trash2, Download, MessageCircle, Send, CheckCircle2, Layers } from 'lucide-react'
 import * as XLSX from 'xlsx'
 
 const CATEGORIES = [
@@ -16,6 +17,7 @@ const beijingToday = () => new Intl.DateTimeFormat('en-CA', {
 }).format(new Date())
 
 export default function AdminPointsAdd() {
+  const { yearId: scopeYearId, projectId: scopeProjectId, selectedProject } = useAdminScope()
   const [tab, setTab] = useState('single')
   const [students, setStudents] = useState([])
   const [years, setYears] = useState([])
@@ -67,6 +69,11 @@ export default function AdminPointsAdd() {
     api.get('/api/admin/groups').then(({ data }) => setGroups(data.items || data))
     api.get('/api/admin/phases').then(({ data }) => setPhases(data.items || data))
   }, [])
+
+  useEffect(() => {
+    setSingleForm(current => ({ ...current, year_id: scopeYearId, project_id: scopeProjectId, phase_id: '', group_id: '', student_id: '' }))
+    setBatchRows(current => current.map(row => ({ ...row, year_id: scopeYearId, project_id: scopeProjectId, phase_id: '', group_id: '' })))
+  }, [scopeYearId, scopeProjectId])
 
   const handleSingleSubmit = async () => {
     if (!singleForm.student_id || !singleForm.phase_id || !singleForm.points || !singleForm.item_name.trim()) return showToast('请选择学员和所属阶段，并填写积分事项和积分值', 'error')
@@ -473,12 +480,14 @@ export default function AdminPointsAdd() {
     setBatchRows(prev => prev.map((r, idx) => idx === i ? { ...r, [field]: value } : r))
   }
 
+  if (!scopeProjectId) return <AppLayout><div className="rounded-3xl border border-dashed border-indigo-200 bg-white p-16 text-center"><Layers className="mx-auto h-10 w-10 text-indigo-300" /><h2 className="mt-4 text-xl font-black text-slate-800">请先选择年度和培训项目</h2><p className="mt-2 text-sm text-slate-500">选择项目后才能录入个人积分，避免积分进入错误项目。</p></div></AppLayout>
+
   return (
     <AppLayout>
       <Toast message={toast?.msg} type={toast?.type} onClose={() => setToast(null)} />
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">个人积分</h1>
-        <p className="text-gray-500 mt-1">录入个人积分或查看积分流水</p>
+          <h1 className="text-2xl font-bold text-gray-900">个人积分 · {selectedProject?.name}</h1>
+          <p className="text-gray-500 mt-1">当前页面的录入和导入仅写入已选择的培训项目</p>
       </div>
       <PointsPageTabs type="personal" />
 

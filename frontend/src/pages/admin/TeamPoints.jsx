@@ -5,6 +5,7 @@ import api from '../../api'
 import AppLayout from '../../components/AppLayout'
 import Toast from '../../components/Toast'
 import PointsPageTabs from '../../components/PointsPageTabs'
+import { useAdminScope } from '../../contexts/AdminScopeContext'
 
 const CATEGORIES = ['线上案例沟通', '线上案例输出', '阶段案例评优', '沙盘共创', '特殊调整']
 const POINT_OPTIONS = {
@@ -27,6 +28,7 @@ const excelDate = value => {
 }
 
 export default function AdminTeamPoints() {
+  const { yearId: scopeYearId, projectId: scopeProjectId, selectedProject } = useAdminScope()
   const [years, setYears] = useState([])
   const [projects, setProjects] = useState([])
   const [groups, setGroups] = useState([])
@@ -52,6 +54,10 @@ export default function AdminTeamPoints() {
       setPhases(phaseRes.data.items || phaseRes.data)
     }).catch(() => showToast('基础数据加载失败', 'error'))
   }, [])
+
+  useEffect(() => {
+    setForm(current => ({ ...current, year_id: scopeYearId, project_id: scopeProjectId, phase_id: '', group_id: '' }))
+  }, [scopeYearId, scopeProjectId])
 
   const changeCategory = (category) => setForm(current => ({ ...current, category, points: category === '特殊调整' ? '' : String(POINT_OPTIONS[category][0]) }))
   const submit = async () => {
@@ -143,11 +149,13 @@ export default function AdminTeamPoints() {
     }
   }
 
+  if (!scopeProjectId) return <AppLayout><div className="rounded-3xl border border-dashed border-indigo-200 bg-white p-16 text-center"><UsersRound className="mx-auto h-10 w-10 text-indigo-300" /><h2 className="mt-4 text-xl font-black text-slate-800">请先选择年度和培训项目</h2><p className="mt-2 text-sm text-slate-500">选择项目后才能录入团队积分。</p></div></AppLayout>
+
   return <AppLayout>
     <Toast message={toast?.msg} type={toast?.type} onClose={() => setToast(null)} />
     <div className="mb-6">
-      <h1 className="text-2xl font-bold text-gray-900">团队积分</h1>
-      <p className="text-gray-500 mt-1">录入团队积分或查看团队积分流水</p>
+        <h1 className="text-2xl font-bold text-gray-900">团队积分 · {selectedProject?.name}</h1>
+        <p className="text-gray-500 mt-1">当前页面的录入和导入仅写入已选择的培训项目</p>
     </div>
     <PointsPageTabs type="team" />
     <div className="bg-white rounded-xl border border-gray-200 p-6 mb-6">

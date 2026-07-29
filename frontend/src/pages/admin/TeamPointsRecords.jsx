@@ -4,8 +4,10 @@ import api from '../../api'
 import AppLayout from '../../components/AppLayout'
 import Toast from '../../components/Toast'
 import PointsPageTabs from '../../components/PointsPageTabs'
+import { useAdminScope } from '../../contexts/AdminScopeContext'
 
 export default function AdminTeamPointsRecords() {
+  const { projectId: scopeProjectId, selectedProject } = useAdminScope()
   const [records, setRecords] = useState([])
   const [loading, setLoading] = useState(true)
   const [toast, setToast] = useState(null)
@@ -14,14 +16,14 @@ export default function AdminTeamPointsRecords() {
   const loadRecords = useCallback(async () => {
     setLoading(true)
     try {
-      const { data } = await api.get('/api/admin/team-points', { params: { page_size: 100 } })
+      const { data } = await api.get('/api/admin/team-points', { params: { page_size: 100, project_id: scopeProjectId || undefined } })
       setRecords(data.items || [])
     } catch (error) {
       showToast(error.response?.data?.detail || '团队积分流水加载失败', 'error')
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [scopeProjectId])
 
   useEffect(() => { loadRecords() }, [loadRecords])
 
@@ -40,8 +42,8 @@ export default function AdminTeamPointsRecords() {
     <Toast message={toast?.msg} type={toast?.type} onClose={() => setToast(null)} />
     <div className="flex items-center justify-between mb-6">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">团队积分</h1>
-        <p className="text-gray-500 mt-1">录入团队积分或查看团队积分流水</p>
+        <h1 className="text-2xl font-bold text-gray-900">团队积分流水{selectedProject ? ` · ${selectedProject.name}` : ''}</h1>
+        <p className="text-gray-500 mt-1">查看当前培训项目的团队积分记录</p>
       </div>
       <button onClick={loadRecords} disabled={loading} className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg border border-gray-300 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50">
         <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> 刷新流水

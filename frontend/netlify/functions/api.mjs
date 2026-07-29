@@ -375,6 +375,7 @@ async function adminCoreRoutes(request, pathname, url) {
     const items = await rows(`SELECT u.id,u.username,u.real_name,u.email,u.phone,u.address,u.department,u.system,u.level1_dept,u.position,
       COALESCE($2,u.project_id) AS project_id,COALESCE($3,u.year_id) AS year_id,u.employment_status,u.account_status,u.created_at,
       p.name AS project_name,y.name AS year_name,g.id AS group_id,g.name AS group_name,
+      COALESCE((SELECT SUM(pt.points) FROM points pt WHERE pt.student_id=u.id AND ($2::bigint IS NULL OR pt.project_id=$2) AND pt.status IN ('有效','active')),0)::int AS period_points,
       COALESCE((SELECT SUM(pt.points) FROM points pt WHERE pt.student_id=u.id AND pt.status='有效'),0)::int AS total_earned,
       (COALESCE((SELECT SUM(pt.points) FROM points pt WHERE pt.student_id=u.id AND pt.status='有效'),0)-
        COALESCE((SELECT SUM(r.points_spent) FROM redemptions r WHERE r.student_id=u.id AND r.status NOT IN ('已拒绝','已取消')),0))::int AS available_points

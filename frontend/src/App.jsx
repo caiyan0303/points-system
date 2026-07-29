@@ -1,5 +1,6 @@
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
+import { AdminScopeProvider } from './contexts/AdminScopeContext'
 import ErrorBoundary from './components/ErrorBoundary'
 
 // Pages
@@ -92,7 +93,9 @@ export default function App() {
   return (
     <HashRouter>
       <AuthProvider>
-        <AppRoutes />
+        <AdminScopeProvider>
+          <AppRoutes />
+        </AdminScopeProvider>
       </AuthProvider>
     </HashRouter>
   )

@@ -1,35 +1,31 @@
 import { useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
+import { useAdminScope } from '../contexts/AdminScopeContext'
 import {
   Calendar, ChevronDown, ClipboardCheck, FileText, Gift,
   LayoutDashboard, LogOut, Menu, Package, PlusCircle, ScrollText,
-  Shield, ShoppingBag, Sparkles, Star, TrendingUp, User, Users, UsersRound, X,
-  Layers,
+  ShoppingBag, Sparkles, TrendingUp, User, UsersRound, X,
+  Layers, FolderKanban, Trophy, Database, Store, BarChart3,
 } from 'lucide-react'
 
 const adminGroups = [
-  { key: 'overview', label: '项目运营', icon: Star, items: [
-    { path: '/admin/dashboard', icon: LayoutDashboard, label: '仪表盘' },
-    { path: '/admin/projects', icon: Layers, label: '项目与阶段' },
-  ] },
-  { key: 'student', label: '学员管理', icon: Users, items: [
+  { key: 'information', label: '信息管理', icon: Database, items: [
+    { path: '/admin/projects', icon: FolderKanban, label: '年度与项目' },
+    { path: '/admin/phases', icon: Layers, label: '阶段管理' },
     { path: '/admin/students', icon: User, label: '学员管理' },
     { path: '/admin/groups', icon: UsersRound, label: '小组管理' },
   ] },
   { key: 'points', label: '积分管理', icon: TrendingUp, items: [
+    { path: '/admin/dashboard', icon: BarChart3, label: '项目积分看板' },
     { path: '/admin/points', icon: PlusCircle, label: '个人积分' },
     { path: '/admin/team-points', icon: UsersRound, label: '团队积分' },
     { path: '/admin/point-rules', icon: ScrollText, label: '积分规则' },
   ] },
-  { key: 'mall', label: '商城管理', icon: ShoppingBag, items: [
+  { key: 'mall', label: '商城管理', icon: Store, items: [
     { path: '/admin/products', icon: Package, label: '商品管理' },
     { path: '/admin/redemptions', icon: ClipboardCheck, label: '兑换审核' },
     { path: '/admin/on-site', icon: Gift, label: '现场发放' },
-  ] },
-  { key: 'system', label: '系统', icon: FileText, items: [
-    { path: '/admin/yearly', icon: Calendar, label: '年度数据汇总' },
-    { path: '/admin/operation-logs', icon: FileText, label: '操作记录' },
   ] },
 ]
 
@@ -44,12 +40,12 @@ function SidebarGroup({ group, location }) {
   const hasActive = group.items.some((item) => location.pathname === item.path || location.pathname.startsWith(`${item.path}/`))
   const [open, setOpen] = useState(hasActive)
   return <div>
-    <button onClick={() => setOpen(!open)} className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold uppercase tracking-wider text-gray-400 hover:text-gray-600">
+    <button onClick={() => setOpen(!open)} className="w-full flex items-center gap-2 px-3 py-2 text-xs font-black tracking-wider text-indigo-200 hover:text-white">
       <group.icon className="w-3.5 h-3.5" />{group.label}<ChevronDown className={`w-3 h-3 ml-auto transition-transform ${open ? '' : '-rotate-90'}`} />
     </button>
     {open && <div className="space-y-0.5 mt-0.5 mb-2">{group.items.map((item) => {
       const active = location.pathname === item.path || location.pathname.startsWith(`${item.path}/`)
-      return <Link key={item.path} to={item.path} className={`flex items-center gap-3 pl-7 pr-3 py-2 rounded-lg text-sm font-medium ${active ? 'bg-indigo-50 text-indigo-700' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-800'}`}>
+      return <Link key={item.path} to={item.path} className={`flex items-center gap-3 pl-7 pr-3 py-2.5 rounded-xl text-sm font-semibold transition ${active ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-lg shadow-indigo-950/30' : 'text-indigo-100/70 hover:bg-white/10 hover:text-white'}`}>
         <item.icon className="w-3.5 h-3.5" />{item.label}
       </Link>
     })}</div>}
@@ -59,14 +55,28 @@ function SidebarGroup({ group, location }) {
 function AdminLayout({ children, user, logout }) {
   const location = useLocation()
   const navigate = useNavigate()
+  const { years, visibleProjects, yearId, projectId, setYearId, setProjectId, selectedProject, loading } = useAdminScope()
   const handleLogout = () => { logout(); navigate('/login') }
-  return <div className="min-h-screen bg-gray-50 flex">
-    <aside className="w-60 bg-white border-r border-gray-200 flex flex-col fixed inset-y-0 left-0 z-30">
-      <div className="p-4 border-b border-gray-100"><Link to="/admin/dashboard" className="flex items-center gap-2.5"><div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center"><Shield className="w-4 h-4 text-white" /></div><div><h1 className="font-bold text-gray-900 text-sm">积分管理系统</h1><p className="text-[10px] text-gray-400">管理端</p></div></Link></div>
-      <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto">{adminGroups.map((group) => <SidebarGroup key={group.key} group={group} location={location} />)}</nav>
-      <div className="p-3 border-t border-gray-100"><div className="flex items-center gap-2.5 px-2 py-1.5"><div className="w-7 h-7 bg-gray-100 rounded-full flex items-center justify-center"><User className="w-3.5 h-3.5 text-gray-500" /></div><div className="flex-1 min-w-0"><p className="text-xs font-medium text-gray-900 truncate">{user?.real_name}</p><p className="text-[10px] text-gray-400">管理员</p></div></div><button onClick={handleLogout} className="flex items-center gap-2 w-full px-2 py-1.5 mt-1 text-xs text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg"><LogOut className="w-3.5 h-3.5" />退出登录</button></div>
+  const mallPage = ['/admin/products', '/admin/redemptions', '/admin/on-site'].some((path) => location.pathname.startsWith(path))
+  return <div className="min-h-screen bg-[#f4f6ff] flex text-slate-900">
+    <aside className="w-64 bg-gradient-to-b from-[#121d46] via-[#111b3e] to-[#0b1330] text-white flex flex-col fixed inset-y-0 left-0 z-30 shadow-2xl shadow-indigo-950/20">
+      <div className="p-5 border-b border-white/10"><Link to="/admin/dashboard" className="flex items-center gap-3"><div className="relative flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 via-violet-500 to-cyan-400 shadow-lg shadow-indigo-950/30"><Trophy className="h-5 w-5 text-white" /><span className="absolute -right-1 -top-1 h-3 w-3 rounded-full border-2 border-[#121d46] bg-amber-400" /></div><div><h1 className="font-black text-sm tracking-wide">优才项目积分管理系统</h1><p className="mt-0.5 text-[10px] uppercase tracking-[.2em] text-indigo-300">管理端</p></div></Link></div>
+      <nav className="flex-1 p-3 pt-5 space-y-2 overflow-y-auto">{adminGroups.map((group) => <SidebarGroup key={group.key} group={group} location={location} />)}</nav>
+      <div className="mx-3 mb-2 grid grid-cols-2 gap-2 border-t border-white/10 pt-3"><Link to="/admin/yearly" className="flex flex-col items-center gap-1 rounded-xl bg-white/5 px-2 py-2 text-[10px] text-indigo-200 hover:bg-white/10"><Calendar className="h-4 w-4" />年度汇总</Link><Link to="/admin/operation-logs" className="flex flex-col items-center gap-1 rounded-xl bg-white/5 px-2 py-2 text-[10px] text-indigo-200 hover:bg-white/10"><FileText className="h-4 w-4" />操作记录</Link></div>
+      <div className="p-3 border-t border-white/10"><div className="flex items-center gap-2.5 px-2 py-2"><div className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10"><User className="h-4 w-4 text-indigo-200" /></div><div className="flex-1 min-w-0"><p className="text-xs font-bold truncate">{user?.real_name}</p><p className="text-[10px] text-indigo-300">系统管理员</p></div></div><button onClick={handleLogout} className="flex items-center gap-2 w-full px-2 py-2 mt-1 text-xs text-indigo-200 hover:text-white hover:bg-white/10 rounded-xl"><LogOut className="w-3.5 h-3.5" />退出登录</button></div>
     </aside>
-    <main className="flex-1 ml-60 min-h-screen"><div className="p-6">{children}</div></main>
+    <main className="flex-1 ml-64 min-h-screen">
+      <div className="sticky top-0 z-20 border-b border-indigo-100/80 bg-white/80 px-7 py-3 backdrop-blur-xl">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div><p className="text-[10px] font-black uppercase tracking-[.2em] text-indigo-500">Management Console</p><p className="mt-0.5 text-sm font-bold text-slate-700">{mallPage ? '商城为全局数据，不受项目筛选影响' : selectedProject ? `当前管理范围：${selectedProject.name}` : '请先选择年度和培训项目'}</p></div>
+          {!mallPage && <div className="flex items-center gap-2 rounded-2xl border border-indigo-100 bg-indigo-50/60 p-1.5">
+            <span className="pl-2 text-xs font-bold text-slate-400">年度</span><select aria-label="管理年度" disabled={loading} value={yearId} onChange={(event) => setYearId(event.target.value)} className="rounded-xl border-0 bg-white px-3 py-2 text-xs font-bold text-slate-700 shadow-sm outline-none"><option value="">请选择年度</option>{years.map((year) => <option key={year.id} value={year.id}>{year.name}</option>)}</select>
+            <span className="pl-1 text-xs font-bold text-slate-400">项目</span><select aria-label="管理项目" disabled={!yearId || loading} value={projectId} onChange={(event) => setProjectId(event.target.value)} className="min-w-44 rounded-xl border-0 bg-white px-3 py-2 text-xs font-bold text-indigo-700 shadow-sm outline-none disabled:text-slate-300"><option value="">请选择项目</option>{visibleProjects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select>
+          </div>}
+        </div>
+      </div>
+      <div className="p-7">{children}</div>
+    </main>
   </div>
 }
 

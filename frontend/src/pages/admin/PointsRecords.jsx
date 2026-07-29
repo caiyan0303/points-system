@@ -4,6 +4,7 @@ import AppLayout from '../../components/AppLayout'
 import Pagination from '../../components/Pagination'
 import Toast from '../../components/Toast'
 import PointsPageTabs from '../../components/PointsPageTabs'
+import { useAdminScope } from '../../contexts/AdminScopeContext'
 import { Search, RefreshCw, Download, Eye, X, Trash2 } from 'lucide-react'
 
 const CATEGORIES = [
@@ -20,6 +21,7 @@ const SOURCE_BADGES = {
 }
 
 export default function AdminPointsRecords() {
+  const { yearId: scopeYearId, projectId: scopeProjectId } = useAdminScope()
   const [records, setRecords] = useState([])
   const [years, setYears] = useState([])
   const [projects, setProjects] = useState([])
@@ -32,8 +34,8 @@ export default function AdminPointsRecords() {
 
   // Filters
   const [keyword, setKeyword] = useState('')
-  const [yearId, setYearId] = useState('')
-  const [projectId, setProjectId] = useState('')
+  const [yearId, setYearId] = useState(scopeYearId)
+  const [projectId, setProjectId] = useState(scopeProjectId)
   const [phaseId, setPhaseId] = useState('')
   const [category, setCategory] = useState('')
   const [dateFrom, setDateFrom] = useState('')
@@ -63,6 +65,8 @@ export default function AdminPointsRecords() {
   }
 
   useEffect(() => { fetchRecords() }, [page])
+  useEffect(() => { setYearId(scopeYearId); setProjectId(scopeProjectId) }, [scopeYearId, scopeProjectId])
+  useEffect(() => { if (page !== 1) setPage(1); else fetchRecords() }, [yearId, projectId])
   useEffect(() => {
     api.get('/api/common/years').then(({ data }) => setYears(data.items || data))
     api.get('/api/common/projects').then(({ data }) => setProjects(data.items || data))
