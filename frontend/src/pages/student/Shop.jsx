@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import api from '../../api'
 import AppLayout from '../../components/AppLayout'
 import Toast from '../../components/Toast'
-import { Clock3, Gift, History, PackageCheck, ScrollText, ShieldCheck, ShoppingBag, Sparkles, Trophy, X } from 'lucide-react'
+import { ArrowDownUp, Clock3, Gift, History, PackageCheck, ScrollText, ShieldCheck, ShoppingBag, Sparkles, Trophy, X } from 'lucide-react'
 
 const dateText = (value) => value ? new Date(value).toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' }) : '长期有效'
 
@@ -16,6 +16,7 @@ export default function StudentShop() {
   const [redeemModal, setRedeemModal] = useState(null)
   const [processing, setProcessing] = useState(false)
   const [category, setCategory] = useState('全部商品')
+  const [sortOrder, setSortOrder] = useState('default')
 
   const showToast = (msg, type = 'success') => { setToast({ msg, type }); setTimeout(() => setToast(null), 3000) }
 
@@ -72,10 +73,11 @@ export default function StudentShop() {
 
   const categories = useMemo(() => ['全部商品', '热门推荐', ...Array.from(new Set(products.map((item) => item.category).filter(Boolean)))], [products])
   const filteredProducts = useMemo(() => {
-    if (category === '全部商品') return products
-    if (category === '热门推荐') return products.slice(0, 4)
-    return products.filter((item) => item.category === category)
-  }, [category, products])
+    const rows = category === '全部商品' ? [...products] : category === '热门推荐' ? products.slice(0, 4) : products.filter((item) => item.category === category)
+    if (sortOrder === 'asc') rows.sort((a, b) => Number(a.points_required || 0) - Number(b.points_required || 0))
+    if (sortOrder === 'desc') rows.sort((a, b) => Number(b.points_required || 0) - Number(a.points_required || 0))
+    return rows
+  }, [category, products, sortOrder])
   const cumulativePoints = Number(stats?.personal_cumulative_points ?? stats?.total_earned ?? stats?.period_points ?? 0)
   const availablePoints = Number(stats?.available_points || 0)
   const usedPoints = Math.max(0, cumulativePoints - availablePoints)
@@ -96,7 +98,7 @@ export default function StudentShop() {
       </div>
     </section>
 
-    <section className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-xs font-black uppercase tracking-[.18em] text-indigo-500">Selected Rewards</p><h2 className="mt-1 text-2xl font-black text-slate-900">精选商品</h2></div><div className="flex flex-wrap gap-2">{categories.map((item) => <button type="button" key={item} onClick={() => setCategory(item)} className={`rounded-xl px-4 py-2 text-xs font-black transition ${category === item ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200' : 'glass-chip text-slate-500 hover:text-indigo-600'}`}>{item}</button>)}</div></section>
+    <section className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-xs font-black uppercase tracking-[.18em] text-indigo-500">Selected Rewards</p><h2 className="mt-1 text-2xl font-black text-slate-900">精选商品</h2></div><div className="flex flex-wrap items-center gap-2">{categories.map((item) => <button type="button" key={item} onClick={() => setCategory(item)} className={`rounded-xl px-4 py-2 text-xs font-black transition ${category === item ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200' : 'glass-chip text-slate-500 hover:text-indigo-600'}`}>{item}</button>)}<div className="ml-0 flex items-center gap-1 rounded-xl border border-indigo-100 bg-white/80 p-1 sm:ml-2"><ArrowDownUp className="ml-2 h-4 w-4 text-indigo-500" />{[['default', '默认'], ['asc', '积分从低到高'], ['desc', '积分从高到低']].map(([value, label]) => <button type="button" key={value} onClick={() => setSortOrder(value)} className={`rounded-lg px-3 py-1.5 text-xs font-black transition ${sortOrder === value ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-500 hover:bg-indigo-50 hover:text-indigo-600'}`}>{label}</button>)}</div></div></section>
 
     {loading ? <div className="flex h-56 items-center justify-center"><div className="h-9 w-9 animate-spin rounded-full border-2 border-indigo-200 border-b-indigo-600" /></div> : error ? <div className="glass-panel rounded-3xl p-14 text-center text-rose-500">{error}</div> : filteredProducts.length ? <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">{filteredProducts.map((product) => {
       const buttonState = getButtonState(product)

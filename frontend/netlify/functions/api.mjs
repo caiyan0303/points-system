@@ -374,14 +374,15 @@ async function adminCoreRoutes(request, pathname, url) {
     const total = Number((await one(`SELECT COUNT(*)::int AS total FROM users u WHERE ${where}`, values.slice(0, 3))).total)
     const items = await rows(`SELECT u.id,u.username,u.real_name,u.email,u.phone,u.address,u.department,u.system,u.level1_dept,u.position,
       COALESCE($2,u.project_id) AS project_id,COALESCE($3,u.year_id) AS year_id,u.employment_status,u.account_status,u.created_at,
-      p.name AS project_name,y.name AS year_name,g.id AS group_id,g.name AS group_name,
+      p.name AS project_name,y.name AS year_name,g.id AS group_id,g.name AS group_name,gm.role AS group_role,
       COALESCE((SELECT SUM(pt.points) FROM points pt WHERE pt.student_id=u.id AND ($2::bigint IS NULL OR pt.project_id=$2) AND pt.status IN ('有效','active')),0)::int AS period_points,
       COALESCE((SELECT SUM(pt.points) FROM points pt WHERE pt.student_id=u.id AND pt.status='有效'),0)::int AS total_earned,
       (COALESCE((SELECT SUM(pt.points) FROM points pt WHERE pt.student_id=u.id AND pt.status='有效'),0)-
        COALESCE((SELECT SUM(r.points_spent) FROM redemptions r WHERE r.student_id=u.id AND r.status NOT IN ('已拒绝','已取消')),0))::int AS available_points
       FROM users u LEFT JOIN project_enrollments pe ON pe.student_id=u.id AND pe.project_id=COALESCE($2,u.project_id)
       LEFT JOIN training_projects p ON p.id=COALESCE($2,u.project_id) LEFT JOIN academic_years y ON y.id=COALESCE($3,u.year_id)
-      LEFT JOIN groups g ON g.id=pe.group_id WHERE ${where} ORDER BY u.id DESC LIMIT $4 OFFSET $5`, values)
+      LEFT JOIN groups g ON g.id=pe.group_id LEFT JOIN group_members gm ON gm.group_id=pe.group_id AND gm.student_id=u.id
+      WHERE ${where} ORDER BY u.id DESC LIMIT $4 OFFSET $5`, values)
     return json({ items, total, page, page_size: pageSize, total_pages: Math.max(1, Math.ceil(total / pageSize)) })
   }
   if (pathname === '/api/admin/students' && request.method === 'POST') {
@@ -442,6 +443,14 @@ async function adminCoreRoutes(request, pathname, url) {
       await rows('DELETE FROM group_members WHERE student_id=$1 AND group_id IN (SELECT id FROM groups WHERE project_id=$2)',[studentId,projectId])
       if (groupId) await rows('INSERT INTO group_members(group_id,student_id) VALUES($1,$2) ON CONFLICT(group_id,student_id) DO NOTHING',[groupId,studentId])
       await rows('UPDATE project_enrollments SET group_id=$1 WHERE student_id=$2 AND project_id=$3',[groupId,studentId,projectId])
+    }
+    if (Object.hasOwn(input,'group_role') && groupId) {
+      if (input.group_role === '小组长') {
+        await rows("UPDATE group_members SET role=NULL WHERE group_id=$1 AND role='小组长'",[groupId])
+        await rows("UPDATE group_members SET role='小组长' WHERE group_id=$1 AND student_id=$2",[groupId,studentId])
+      } else {
+        await rows("UPDATE group_members SET role=NULL WHERE group_id=$1 AND student_id=$2",[groupId,studentId])
+      }
     }
     if (projectId) await syncProjectPhaseAssociations(projectId)
     return json({message:'学员信息已更新',...updated})
@@ -599,6 +608,7 @@ async function adminExtendedRoutes(request, pathname, url) {
     const yearId=numberOrNull(url.searchParams.get('year_id')),projectId=numberOrNull(url.searchParams.get('project_id'))
     const groupItems=await rows(`SELECT g.*,y.name AS year_name,p.name AS project_name,
       (SELECT COUNT(*)::int FROM group_members gm WHERE gm.group_id=g.id) AS member_count,
+      (SELECT u.real_name FROM group_members gm JOIN users u ON u.id=gm.student_id WHERE gm.group_id=g.id AND gm.role='小组长' LIMIT 1) AS leader_name,
       COALESCE((SELECT SUM(pt.points)::int FROM points pt JOIN group_members gm ON gm.student_id=pt.student_id WHERE gm.group_id=g.id AND pt.project_id=g.project_id AND pt.status IN ('有效','active')),0) AS personal_points,
       COALESCE((SELECT SUM(tp.points)::int FROM team_points tp WHERE tp.group_id=g.id AND tp.project_id=g.project_id AND tp.status IN ('有效','active')),0) AS team_points
       FROM groups g LEFT JOIN academic_years y ON y.id=g.year_id LEFT JOIN training_projects p ON p.id=g.project_id
@@ -631,6 +641,17 @@ async function adminExtendedRoutes(request, pathname, url) {
       for (const id of ids) { await rows('DELETE FROM group_members WHERE student_id=$1 AND group_id IN (SELECT id FROM groups WHERE project_id=$2)',[id,group.project_id]); await rows('INSERT INTO group_members(group_id,student_id) VALUES($1,$2) ON CONFLICT DO NOTHING',[groupId,id]); await rows('UPDATE project_enrollments SET group_id=$1 WHERE student_id=$2 AND project_id=$3',[groupId,id,group.project_id]) }
       await syncProjectPhaseAssociations(group.project_id)
       return json({message:'成员已添加'})
+    }
+    if (memberId&&request.method==='PUT') {
+      const input=await body(request)
+      if (!await one('SELECT id FROM group_members WHERE group_id=$1 AND student_id=$2',[groupId,memberId])) return json({detail:'该学员不属于当前小组'},404)
+      if (input.role === '小组长') {
+        await rows("UPDATE group_members SET role=NULL WHERE group_id=$1 AND role='小组长'",[groupId])
+        await rows("UPDATE group_members SET role='小组长' WHERE group_id=$1 AND student_id=$2",[groupId,memberId])
+        return json({message:'小组长已设置'})
+      }
+      await rows('UPDATE group_members SET role=NULL WHERE group_id=$1 AND student_id=$2',[groupId,memberId])
+      return json({message:'小组长标记已取消'})
     }
     if (memberId&&request.method==='DELETE') { await rows('DELETE FROM group_members WHERE group_id=$1 AND student_id=$2',[groupId,memberId]); await rows('UPDATE project_enrollments SET group_id=NULL WHERE project_id=$1 AND student_id=$2',[group.project_id,memberId]); await syncProjectPhaseAssociations(group.project_id); return json({message:'成员已移除'}) }
   }
@@ -899,6 +920,12 @@ async function studentRoutes(request, pathname, url) {
   if(pathname==='/api/student/rule-text'&&request.method==='GET')return json(await rows('SELECT * FROM rule_texts ORDER BY id DESC'))
   if(pathname==='/api/student/team'&&request.method==='GET'){
     if(!enrollment?.project_id)return json({group:null,members:[],all_groups:[],team_point_records:[]})
+    const projectPersonalRankings=await rows(`SELECT u.id AS student_id,u.real_name AS student_name,g.name AS group_name,
+      COALESCE(SUM(pt.points) FILTER(WHERE pt.status IN ('有效','active')),0)::int AS total_points
+      FROM project_enrollments pe JOIN users u ON u.id=pe.student_id LEFT JOIN groups g ON g.id=pe.group_id
+      LEFT JOIN points pt ON pt.student_id=u.id AND pt.project_id=pe.project_id
+      WHERE pe.project_id=$1 GROUP BY u.id,u.real_name,g.name ORDER BY total_points DESC,u.id`,[enrollment.project_id])
+    projectPersonalRankings.forEach((item,index)=>{item.rank=index+1;item.is_me=String(item.student_id)===String(student.id)})
     const groupRanks=await rows(`SELECT g.id,g.name,
       (SELECT COUNT(DISTINCT member_id)::int FROM (SELECT pe.student_id AS member_id FROM project_enrollments pe WHERE pe.project_id=$1 AND pe.group_id=g.id UNION SELECT gm.student_id AS member_id FROM group_members gm WHERE gm.group_id=g.id) member_rows) AS member_count,
       COALESCE((SELECT SUM(pt.points) FROM points pt WHERE pt.project_id=$1 AND pt.status IN ('有效','active') AND pt.student_id IN (SELECT pe.student_id FROM project_enrollments pe WHERE pe.project_id=$1 AND pe.group_id=g.id UNION SELECT gm.student_id FROM group_members gm WHERE gm.group_id=g.id)),0)::int AS personal_points,
@@ -906,17 +933,17 @@ async function studentRoutes(request, pathname, url) {
       FROM groups g WHERE g.project_id=$1`,[enrollment.project_id])
     groupRanks.forEach(item=>item.final_score=Number(item.personal_points)+Number(item.team_points))
     groupRanks.sort((a,b)=>b.final_score-a.final_score).forEach((item,index)=>{item.rank=index+1;item.is_my_group=String(item.id)===String(enrollment.group_id)})
-    if(!enrollment.group_id)return json({group:null,members:[],all_groups:groupRanks,team_point_records:[]})
+    if(!enrollment.group_id)return json({group:null,members:[],all_groups:groupRanks,project_personal_rankings:projectPersonalRankings,team_point_records:[]})
     const group=await one('SELECT * FROM groups WHERE id=$1',[enrollment.group_id])
-    const members=await rows(`SELECT u.id AS student_id,u.real_name AS student_name,u.level1_dept AS department,
+    const members=await rows(`SELECT u.id AS student_id,u.real_name AS student_name,u.level1_dept AS department,gm.role,
       COALESCE(SUM(pt.points) FILTER(WHERE pt.status IN ('有效','active')),0)::int AS period_points
       FROM group_members gm JOIN users u ON u.id=gm.student_id LEFT JOIN points pt ON pt.student_id=u.id AND pt.project_id=$1
-      WHERE gm.group_id=$2 GROUP BY u.id,u.real_name,u.level1_dept ORDER BY period_points DESC`,[enrollment.project_id,enrollment.group_id])
+      WHERE gm.group_id=$2 GROUP BY u.id,u.real_name,u.level1_dept,gm.role ORDER BY period_points DESC`,[enrollment.project_id,enrollment.group_id])
     members.forEach((member,index)=>member.rank=index+1)
     const personalTotal=members.reduce((sum,member)=>sum+Number(member.period_points),0)
     const teamPoints=Number((await one("SELECT COALESCE(SUM(points),0)::int AS total FROM team_points WHERE group_id=$1 AND project_id=$2 AND status IN ('有效','active')",[group.id,enrollment.project_id]))?.total||0)
     const recentTeamPoints=await rows(`SELECT tp.id,tp.category,tp.item_name,tp.points,tp.obtained_date,ph.name AS phase_name FROM team_points tp LEFT JOIN phases ph ON ph.id=tp.phase_id WHERE tp.group_id=$1 AND tp.project_id=$2 AND tp.status IN ('有效','active') ORDER BY tp.obtained_date DESC,tp.id DESC LIMIT 20`,[group.id,enrollment.project_id])
-    return json({group:{...group,member_count:members.length,personal_points:personalTotal,team_points:teamPoints,total_points:personalTotal+teamPoints,final_score:personalTotal+teamPoints,avg_points:members.length?Math.round((personalTotal+teamPoints)*100/members.length)/100:0,rank:groupRanks.findIndex(item=>String(item.id)===String(group.id))+1},members,all_groups:groupRanks,team_point_records:recentTeamPoints})
+    return json({group:{...group,member_count:members.length,personal_points:personalTotal,team_points:teamPoints,total_points:personalTotal+teamPoints,final_score:personalTotal+teamPoints,avg_points:members.length?Math.round((personalTotal+teamPoints)*100/members.length)/100:0,rank:groupRanks.findIndex(item=>String(item.id)===String(group.id))+1},members,all_groups:groupRanks,project_personal_rankings:projectPersonalRankings,team_point_records:recentTeamPoints})
   }
   const teamPhase=pathname.match(/^\/api\/student\/team\/phases\/(\d+)$/)
   if(teamPhase&&request.method==='GET'){

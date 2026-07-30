@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import api from '../../api'
 import AppLayout from '../../components/AppLayout'
+import { rewardPolicyFor } from '../../utils/rewardPolicy'
 import { ArrowRight, Award, Crown, Gift, ShoppingBag, Sparkles, TrendingUp, Trophy, Users } from 'lucide-react'
 
 export default function StudentDashboard() {
@@ -26,6 +27,7 @@ export default function StudentDashboard() {
     ]).then(([dashboardRes, phaseRes, teamRes, projectRes]) => {
       const nextPhases = phaseRes.data?.phases || []
       setData(dashboardRes.data)
+      setRankingTab(rewardPolicyFor(dashboardRes.data?.project_name).phaseAwardType === 'group' ? 'team' : 'personal')
       setPhases(nextPhases)
       setTeamData(teamRes.data)
       const projectItems = projectRes.data?.items || projectRes.data || []
@@ -51,8 +53,15 @@ export default function StudentDashboard() {
     return () => { active = false }
   }, [selectedPhaseId])
 
-  const personalTop = useMemo(() => (phaseDetail?.personal_rankings || phaseDetail?.rankings || []).slice(0, 3), [phaseDetail])
-  const teamTop = useMemo(() => (teamData?.all_groups || phaseDetail?.group_rankings || []).slice(0, 3), [teamData, phaseDetail])
+  const rewardPolicy = useMemo(() => rewardPolicyFor(data?.project_name), [data?.project_name])
+  const personalTop = useMemo(() => {
+    const rows = rewardPolicy.isPlus ? teamData?.project_personal_rankings : (phaseDetail?.personal_rankings || phaseDetail?.rankings)
+    return (rows || []).slice(0, 3)
+  }, [phaseDetail, rewardPolicy.isPlus, teamData])
+  const teamTop = useMemo(() => {
+    const rows = rewardPolicy.isPlus ? phaseDetail?.group_rankings : teamData?.all_groups
+    return (rows || []).slice(0, 3)
+  }, [teamData, phaseDetail, rewardPolicy.isPlus])
   const currentPhase = phases.find((item) => ['进行中', 'in_progress'].includes(item.status)) || phases[0]
   const rankingRows = rankingTab === 'personal' ? personalTop : teamTop
   const teamRank = teamData?.group?.rank || teamData?.rank || null
@@ -87,25 +96,25 @@ export default function StudentDashboard() {
 
     <section className="grid gap-4 lg:grid-cols-[1.25fr_.75fr]">
       <div className="glass-panel overflow-hidden rounded-[26px] border shadow-xl shadow-indigo-100/40">
-        <div className="flex flex-col gap-3 border-b border-white/80 px-5 pt-5 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-sm font-bold uppercase tracking-[.16em] text-indigo-500">Project Ranking</p><h2 className="mt-0.5 text-xl font-black text-slate-900">排行榜</h2></div><button onClick={() => navigate(projectViewPath(rankingTab === 'personal' ? 'personal' : 'team'))} className="mb-3 inline-flex items-center gap-1 text-sm font-bold text-indigo-600">进入项目详情 <ArrowRight className="h-4 w-4" /></button></div>
+        <div className="flex flex-col gap-3 border-b border-white/80 px-5 pt-5 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-sm font-bold uppercase tracking-[.16em] text-indigo-500">Project Ranking</p><h2 className="mt-0.5 text-xl font-black text-slate-900">排行榜</h2><p className="mt-1 text-xs font-bold text-violet-500">{rewardPolicy.summary}</p></div><button onClick={() => navigate(projectViewPath(rankingTab === 'personal' ? 'personal' : 'team'))} className="mb-3 inline-flex items-center gap-1 text-sm font-bold text-indigo-600">进入项目详情 <ArrowRight className="h-4 w-4" /></button></div>
         <div className="relative mx-5 mt-3 grid grid-cols-2 rounded-2xl bg-slate-100/80 p-1">
           <span className={`absolute bottom-1 top-1 w-[calc(50%-4px)] rounded-xl bg-white shadow-md transition-transform duration-300 ${rankingTab === 'team' ? 'translate-x-[100%]' : 'translate-x-0'}`} />
-          <button onClick={() => setRankingTab('personal')} className={`relative z-10 flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-black transition ${rankingTab === 'personal' ? 'text-indigo-700' : 'text-slate-400'}`}><Award className="h-4 w-4" />阶段个人榜</button>
-          <button onClick={() => setRankingTab('team')} className={`relative z-10 flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-black transition ${rankingTab === 'team' ? 'text-violet-700' : 'text-slate-400'}`}><Users className="h-4 w-4" />小组榜</button>
+          <button onClick={() => setRankingTab('personal')} className={`relative z-10 flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-black transition ${rankingTab === 'personal' ? 'text-indigo-700' : 'text-slate-400'}`}><Award className="h-4 w-4" />{rewardPolicy.isPlus ? '项目个人榜' : '阶段个人榜'}</button>
+          <button onClick={() => setRankingTab('team')} className={`relative z-10 flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-black transition ${rankingTab === 'team' ? 'text-violet-700' : 'text-slate-400'}`}><Users className="h-4 w-4" />{rewardPolicy.isPlus ? '阶段小组榜' : '项目小组榜'}</button>
         </div>
         <div className="p-5">
           <div className="mb-3 flex items-center justify-between gap-3">
-            {rankingTab === 'personal' ? <label className="flex min-w-0 items-center gap-2 text-sm font-semibold text-slate-500">
+            {((rankingTab === 'personal' && !rewardPolicy.isPlus) || (rankingTab === 'team' && rewardPolicy.isPlus)) ? <label className="flex min-w-0 items-center gap-2 text-sm font-semibold text-slate-500">
               <span className="shrink-0">查看阶段</span>
               <select value={selectedPhaseId} onChange={(event) => setSelectedPhaseId(event.target.value)} className="min-w-0 rounded-xl border border-indigo-100 bg-white/80 px-3 py-2 text-sm font-bold text-indigo-700 outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100">
                 {phases.map((phase) => <option key={phase.phase_id} value={String(phase.phase_id)}>{phase.phase_name}{String(phase.phase_id) === String(currentPhase?.phase_id) ? '（当前）' : ''}</option>)}
               </select>
-            </label> : <p className="text-sm font-semibold text-slate-500">小组最终得分排名</p>}
+            </label> : <p className="text-sm font-semibold text-slate-500">{rankingTab === 'personal' ? '项目个人总积分排名' : '项目小组最终得分排名'}</p>}
           </div>
           {rankingRows.length ? <div className="space-y-2">{rankingRows.map((item, index) => {
             const name = rankingTab === 'personal' ? item.student_name : item.name || item.group_name
             const points = rankingTab === 'personal' ? item.total_points || 0 : item.final_score ?? item.total_points ?? 0
-            if (index === 0) return <div key={item.student_id || item.id || item.group_id} className={`flex items-center gap-3 rounded-2xl border px-4 py-3 shadow-sm ${item.is_me || item.is_my_group ? 'border-indigo-200 bg-indigo-50/80' : 'border-slate-100 bg-white/80'}`}><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-100 text-indigo-600"><Crown className="h-5 w-5" /></span><div className="flex min-w-0 flex-1 items-center gap-2"><span className="shrink-0 text-sm font-black text-indigo-600">NO.1 {rankingTab === 'personal' ? '阶段冠军' : '小组冠军'}</span><p className="truncate text-base font-black text-slate-800">{name}{(item.is_me || item.is_my_group) && <span className="ml-2 text-xs font-bold text-indigo-500">我的位置</span>}</p></div><strong className="shrink-0 text-lg font-black text-indigo-600">{points} 分</strong></div>
+            if (index === 0) return <div key={item.student_id || item.id || item.group_id} className={`flex items-center gap-3 rounded-2xl border px-4 py-3 shadow-sm ${item.is_me || item.is_my_group ? 'border-indigo-200 bg-indigo-50/80' : 'border-slate-100 bg-white/80'}`}><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-100 text-indigo-600"><Crown className="h-5 w-5" /></span><div className="flex min-w-0 flex-1 items-center gap-2"><span className="shrink-0 text-sm font-black text-indigo-600">NO.1 {rankingTab === 'personal' ? (rewardPolicy.isPlus ? '项目个人冠军' : '阶段个人冠军') : (rewardPolicy.isPlus ? '阶段小组冠军' : '项目小组冠军')}</span><p className="truncate text-base font-black text-slate-800">{name}{(item.is_me || item.is_my_group) && <span className="ml-2 text-xs font-bold text-indigo-500">我的位置</span>}</p></div><strong className="shrink-0 text-lg font-black text-indigo-600">{points} 分</strong></div>
             return <div key={item.student_id || item.id || item.group_id} className={`flex items-center gap-4 rounded-2xl px-4 py-3.5 transition ${item.is_me || item.is_my_group ? 'bg-indigo-50/80' : 'bg-white/55'}`}><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-100 to-violet-100 text-sm font-black text-indigo-700 ring-1 ring-indigo-200">{index + 1}</span><div className="min-w-0 flex-1"><p className="truncate text-sm font-black text-slate-800">{name}{(item.is_me || item.is_my_group) && <span className="ml-2 text-[10px] font-bold text-indigo-500">我的位置</span>}</p></div><strong className="text-base font-black text-indigo-600">{points} 分</strong></div>
           })}</div> : <p className="py-12 text-center text-sm text-slate-400">暂无排名数据</p>}
         </div>

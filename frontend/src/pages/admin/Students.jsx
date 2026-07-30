@@ -54,7 +54,7 @@ export default function AdminStudents() {
 
   const [pointForm, setPointForm] = useState({ points: '', category: '线上学习', description: '', phase_id: '' })
   const [createForm, setCreateForm] = useState({ real_name: '', department: '', system: '', level1_dept: '', position: '', year_id: '', project_id: '', group_id: '', group_name: '' })
-  const [editForm, setEditForm] = useState({ real_name: '', department: '', system: '', level1_dept: '', position: '', year_id: '', project_id: '', group_id: '', group_name: '', employment_status: '在职', account_status: '启用' })
+  const [editForm, setEditForm] = useState({ real_name: '', department: '', system: '', level1_dept: '', position: '', year_id: '', project_id: '', group_id: '', group_name: '', group_role: '', employment_status: '在职', account_status: '启用' })
 
   const showToast = (msg, type = 'success') => { setToast({ msg, type }); setTimeout(() => setToast(null), 3000) }
 
@@ -178,7 +178,7 @@ export default function AdminStudents() {
   // Edit student
   const openEdit = (s) => {
     setEditModal(s)
-    setEditForm({ real_name: s.real_name, department: s.department || '', system: s.system || '', level1_dept: s.level1_dept || '', position: s.position || '', year_id: s.year_id || '', project_id: s.project_id || '', group_id: s.group_id || '', group_name: s.group_name || '', employment_status: s.employment_status, account_status: s.account_status })
+    setEditForm({ real_name: s.real_name, department: s.department || '', system: s.system || '', level1_dept: s.level1_dept || '', position: s.position || '', year_id: s.year_id || '', project_id: s.project_id || '', group_id: s.group_id || '', group_name: s.group_name || '', group_role: s.group_role || '', employment_status: s.employment_status, account_status: s.account_status })
   }
   const handleEdit = async () => {
     try { await api.put(`/api/admin/students/${editModal.id}`, {...editForm, year_id: editForm.year_id || null, project_id: editForm.project_id || null, group_id: editForm.group_id || null}); showToast('已更新'); setEditModal(null); api.get('/api/admin/groups').then(({ data }) => setGroups(data || [])); fetchStudents() }
@@ -403,7 +403,7 @@ export default function AdminStudents() {
                     <td className="px-4 py-3 text-sm text-gray-700">{s.system || '-'}</td>
                     <td className="px-4 py-3 text-sm text-gray-700">{s.level1_dept || '-'}</td>
                     <td className="px-4 py-3 text-sm text-gray-700">{s.position || '-'}</td>
-                    <td className="px-4 py-3 text-sm text-gray-500">{s.group_name || '-'}</td>
+                    <td className="px-4 py-3 text-sm text-gray-500">{s.group_name || '-'}{s.group_role === '小组长' && <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700">小组长</span>}</td>
                     <td className="px-4 py-3 text-center">
                       <span className={`text-xs px-2 py-0.5 rounded-full ${s.employment_status === '在职' ? 'bg-green-50 text-green-600' : 'bg-gray-100 text-gray-500'}`}>{s.employment_status}</span>
                     </td>
@@ -503,6 +503,7 @@ export default function AdminStudents() {
               <div><label className="block text-sm text-gray-600 mb-1">年度</label><select value={editForm.year_id || ''} onChange={(e) => setEditForm({...editForm, year_id: e.target.value, project_id: '', group_id: '', group_name: ''})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"><option value="">选择年度</option>{years.map(y => <option key={y.id} value={y.id}>{y.name}</option>)}</select></div>
               <div><label className="block text-sm text-gray-600 mb-1">培训项目</label><select value={editForm.project_id || ''} onChange={(e) => setEditForm({...editForm, project_id: e.target.value, group_id: '', group_name: ''})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"><option value="">选择项目</option>{editProjects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></div>
               <div><label className="block text-sm text-gray-600 mb-1">所属小组</label><input type="text" list="edit-student-groups" value={editForm.group_name || ''} onChange={(e) => setEditForm({...editForm, group_id: '', group_name: e.target.value})} disabled={!editForm.project_id} placeholder={editForm.project_id ? '选择已有小组或输入新小组' : '请先选择培训项目'} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm disabled:bg-gray-100 disabled:text-gray-400" /><datalist id="edit-student-groups">{editGroups.map(g => <option key={g.id} value={g.name} />)}</datalist><p className="mt-1 text-xs text-gray-400">没有对应小组时，将按输入名称自动创建</p></div>
+              <div><label className="block text-sm text-gray-600 mb-1">小组角色</label><select value={editForm.group_role || ''} onChange={(e) => setEditForm({...editForm, group_role: e.target.value})} disabled={!editForm.group_name} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm disabled:bg-gray-100"><option value="">普通成员</option><option value="小组长">小组长</option></select><p className="mt-1 text-xs text-gray-400">每个小组只能设置一位小组长</p></div>
               <div><label className="block text-sm text-gray-600 mb-1">在职状态</label><select value={editForm.employment_status || '在职'} onChange={(e) => setEditForm({...editForm, employment_status: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"><option>在职</option><option>离职</option></select></div>
               <div><label className="block text-sm text-gray-600 mb-1">账号状态</label><select value={editForm.account_status || '启用'} onChange={(e) => setEditForm({...editForm, account_status: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"><option>启用</option><option>终止</option></select></div>
             </div>

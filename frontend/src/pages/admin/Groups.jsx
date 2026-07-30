@@ -4,7 +4,7 @@ import AppLayout from '../../components/AppLayout'
 import Toast from '../../components/Toast'
 import InformationPageTabs from '../../components/InformationPageTabs'
 import { useAdminScope } from '../../contexts/AdminScopeContext'
-import { Plus, X, UserPlus, Trash2, ChevronRight, ArrowLeft } from 'lucide-react'
+import { Plus, X, UserPlus, Trash2, ChevronRight, ArrowLeft, Crown } from 'lucide-react'
 
 export default function AdminGroups() {
   const { yearId, projectId, selectedYear, selectedProject } = useAdminScope()
@@ -87,6 +87,16 @@ export default function AdminGroups() {
       showToast('成员已移除')
       openDetail(viewGroup)
     } catch (err) { showToast(err.response?.data?.detail || '操作失败', 'error') }
+  }
+
+  const handleLeader = async (member) => {
+    try {
+      const nextRole = member.role === '小组长' ? '' : '小组长'
+      const { data } = await api.put(`/api/admin/groups/${viewGroup.id}/members/${member.student_id}`, { role: nextRole })
+      showToast(data.message || (nextRole ? '小组长已设置' : '小组长标记已取消'))
+      openDetail(viewGroup)
+      fetchGroups()
+    } catch (err) { showToast(err.response?.data?.detail || '小组长设置失败', 'error') }
   }
 
   const handleDeleteGroup = async () => {
@@ -185,11 +195,12 @@ export default function AdminGroups() {
                         <tbody className="divide-y divide-gray-50">
                           {groupDetail.members?.map((m) => (
                             <tr key={m.id || m.student_id} className="hover:bg-gray-50">
-                              <td className="px-4 py-3 text-sm font-medium text-gray-900">{m.student_name || m.real_name}</td>
+                              <td className="px-4 py-3 text-sm font-medium text-gray-900">{m.student_name || m.real_name}{m.role === '小组长' && <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700"><Crown className="h-3 w-3" />小组长</span>}</td>
                               <td className="px-4 py-3 text-sm text-gray-700">{m.period_points || 0}</td>
                               <td className="px-4 py-3 text-sm text-indigo-600 font-medium">{m.phase_points?.[0]?.points || 0}</td>
                               <td className="px-4 py-3 text-sm text-gray-500">{m.rank ? `第 ${m.rank} 名` : '-'}</td>
                               <td className="px-4 py-3 text-center">
+                                <button onClick={() => handleLeader(m)} className={`mr-2 inline-flex items-center gap-1 rounded px-2 py-1 text-xs ${m.role === '小组长' ? 'bg-amber-100 text-amber-700' : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'}`}><Crown className="h-3 w-3" />{m.role === '小组长' ? '取消组长' : '设为组长'}</button>
                                 <button onClick={() => handleRemoveMember(m.student_id, m.student_name)} className="px-2 py-1 text-xs bg-red-50 text-red-500 rounded hover:bg-red-100">
                                   <Trash2 className="w-3 h-3" />
                                 </button>
@@ -279,6 +290,7 @@ export default function AdminGroups() {
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">小组名称</th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">年度 / 培训项目</th>
                       <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">成员</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">小组长</th>
                       <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">成员个人积分</th>
                       <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">小组积分</th>
                       <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">小组最终得分</th>
@@ -295,6 +307,7 @@ export default function AdminGroups() {
                           <div className="mt-0.5 text-xs text-gray-400">{g.project_name || '-'}</div>
                         </td>
                         <td className="px-4 py-3 text-right text-sm text-gray-700">{g.member_count || 0} 人</td>
+                        <td className="px-4 py-3 text-sm text-gray-700">{g.leader_name ? <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-1 text-xs font-bold text-amber-700"><Crown className="h-3 w-3" />{g.leader_name}</span> : <span className="text-gray-400">未设置</span>}</td>
                         <td className="px-4 py-3 text-right text-sm font-medium text-indigo-600">{g.personal_points || 0}</td>
                         <td className="px-4 py-3 text-right text-sm font-medium text-orange-600">{g.team_points || 0}</td>
                         <td className="px-4 py-3 text-right text-sm font-semibold text-green-600">{g.final_score || g.total_points || 0}</td>
