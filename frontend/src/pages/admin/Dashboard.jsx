@@ -34,16 +34,16 @@ export default function AdminDashboard() {
     setError('')
     try {
       const params = { year_id: yearId, project_id: projectId }
-      const [phaseRes, groupRes, studentRes, pointRes, teamPointRes] = await Promise.all([
+      const [phaseRes, groupRes, summaryRes, pointRes, teamPointRes] = await Promise.all([
         api.get('/api/admin/phases', { params }),
         api.get('/api/admin/groups', { params }),
-        api.get('/api/admin/students', { params: { ...params, page: 1, page_size: 100 } }),
+        api.get('/api/admin/project-summary', { params }),
         api.get('/api/admin/points/records', { params: { ...params, page: 1, page_size: 10 } }),
         api.get('/api/admin/team-points', { params: { project_id: projectId, page: 1, page_size: 10 } }).catch(() => ({ data: { items: [] } })),
       ])
       const phases = phaseRes.data?.items || phaseRes.data || []
       const groups = groupRes.data?.items || groupRes.data || []
-      const students = studentRes.data?.items || studentRes.data || []
+      const projectSummary = summaryRes.data || {}
       const personalRecords = pointRes.data?.items || pointRes.data || []
       const teamRecords = teamPointRes.data?.items || teamPointRes.data || []
       const champions = await Promise.all(phases.map(async (phase) => {
@@ -54,7 +54,7 @@ export default function AdminDashboard() {
           return { phase, champion: rows[0] || null }
         } catch { return { phase, champion: null } }
       }))
-      setDashboard({ phases, groups, students, personalRecords, teamRecords, champions })
+      setDashboard({ phases, groups, projectSummary, personalRecords, teamRecords, champions })
     } catch (err) {
       setError(errorText(err.response?.data?.detail, '项目积分看板加载失败'))
     } finally { setLoading(false) }
@@ -67,18 +67,16 @@ export default function AdminDashboard() {
     .sort((a, b) => number(b.final_score ?? b.total_points) - number(a.final_score ?? a.total_points))
     .slice(0, rewardPolicy.projectGroupCount), [dashboard, rewardPolicy.projectGroupCount])
 
-  const personalWinners = useMemo(() => [...(dashboard?.students || [])]
-    .sort((a, b) => number(b.period_points ?? b.project_points) - number(a.period_points ?? a.project_points))
+  const personalWinners = useMemo(() => (dashboard?.projectSummary?.personal_winners || [])
     .slice(0, rewardPolicy.projectPersonalCount), [dashboard, rewardPolicy.projectPersonalCount])
 
   const summary = useMemo(() => {
-    const students = dashboard?.students || []
     const groups = dashboard?.groups || []
     return {
-      students: students.length,
+      students: number(dashboard?.projectSummary?.student_count),
       groups: groups.length,
-      personalPoints: students.reduce((sum, item) => sum + number(item.period_points ?? item.project_points), 0),
-      availablePoints: students.reduce((sum, item) => sum + number(item.available_points), 0),
+      personalPoints: number(dashboard?.projectSummary?.personal_points),
+      availablePoints: number(dashboard?.projectSummary?.available_points),
       teamPoints: groups.reduce((sum, item) => sum + number(item.team_points), 0),
     }
   }, [dashboard])

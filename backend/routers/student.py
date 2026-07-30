@@ -11,7 +11,7 @@ from database import get_db
 from models import (
     User, AcademicYear, TrainingProject, Group, GroupMember, ProjectEnrollment,
     Phase, PhaseParticipant, PhaseGroup,
-    Point, Product, Redemption,
+    Point, TeamPoint, Product, Redemption,
     UserRole, EmploymentStatus, AccountStatus,
     YearStatus, ProjectStatus, GroupStatus, PhaseStatus,
     PointDataSource, PointStatus, ProductStatus, RedemptionStatus,
@@ -435,17 +435,25 @@ def get_phase_detail(
                 GroupMember.group_id == project_group.id,
             ).all()]
         member_ids = list(dict.fromkeys(member_ids))
-        total = sum(totals_by_student.get(student_id, 0) for student_id in member_ids)
-        average = round(total / len(member_ids), 2) if member_ids else 0
+        personal_total = sum(totals_by_student.get(student_id, 0) for student_id in member_ids)
+        team_total = db.query(func.coalesce(func.sum(TeamPoint.points), 0)).filter(
+            TeamPoint.group_id == project_group.id, TeamPoint.phase_id == phase_id,
+            TeamPoint.status == PointStatus.ACTIVE.value,
+        ).scalar() or 0
+        final_score = int(personal_total) + int(team_total)
+        average = round(final_score / len(member_ids), 2) if member_ids else 0
         group_ranking_rows.append({
             "group_id": project_group.id,
             "group_name": project_group.name,
             "member_count": len(member_ids),
-            "total_points": total,
+            "personal_points": int(personal_total),
+            "team_points": int(team_total),
+            "total_points": final_score,
+            "final_score": final_score,
             "avg_points": average,
             "is_my_group": bool(group and project_group.id == group.id),
         })
-    group_ranking_rows.sort(key=lambda item: (-item["avg_points"], -item["total_points"], item["group_name"]))
+    group_ranking_rows.sort(key=lambda item: (-item["final_score"], item["group_name"]))
     for index, item in enumerate(group_ranking_rows):
         item["rank"] = index + 1
         if item["is_my_group"]:
@@ -555,7 +563,11 @@ def get_team(
             })
 
     # 小组统计
-    _, total_pts, avg_pts = _compute_group_stats_local(db, group.id, group.year_id, group.project_id)
+    _, personal_pts, _ = _compute_group_stats_local(db, group.id, group.year_id, group.project_id)
+    team_pts = db.query(func.coalesce(func.sum(TeamPoint.points), 0)).filter(
+        TeamPoint.group_id == group.id, TeamPoint.year_id == group.year_id,
+        TeamPoint.project_id == group.project_id, TeamPoint.status == PointStatus.ACTIVE.value,
+    ).scalar() or 0
 
     # 小组排名
     all_groups = db.query(Group).filter(Group.project_id == group.project_id).all()
@@ -564,7 +576,11 @@ def get_team(
         gms2 = db.query(GroupMember).filter(GroupMember.group_id == g.id).all()
         gm_ids = [gm2.student_id for gm2 in gms2]
         if not gm_ids:
-            group_rank_list.append((g.id, g.name, 0, 0.0, 0))
+            g_team_pts = db.query(func.coalesce(func.sum(TeamPoint.points), 0)).filter(
+                TeamPoint.group_id == g.id, TeamPoint.project_id == g.project_id,
+                TeamPoint.status == PointStatus.ACTIVE.value,
+            ).scalar() or 0
+            group_rank_list.append((g.id, g.name, 0, int(g_team_pts), int(g_team_pts), 0))
             continue
         g_total_pts = db.query(func.coalesce(func.sum(Point.points), 0)).filter(
             Point.student_id.in_(gm_ids),
@@ -572,14 +588,18 @@ def get_team(
             Point.year_id == g.year_id,
             Point.project_id == g.project_id,
         ).scalar() or 0
-        g_avg_pts = g_total_pts / len(gm_ids)
-        group_rank_list.append((g.id, g.name, g_total_pts, g_avg_pts, len(gm_ids)))
-    group_rank_list.sort(key=lambda x: x[3], reverse=True)
+        g_team_pts = db.query(func.coalesce(func.sum(TeamPoint.points), 0)).filter(
+            TeamPoint.group_id == g.id, TeamPoint.project_id == g.project_id,
+            TeamPoint.status == PointStatus.ACTIVE.value,
+        ).scalar() or 0
+        g_final = int(g_total_pts) + int(g_team_pts)
+        group_rank_list.append((g.id, g.name, g_total_pts, g_team_pts, g_final, len(gm_ids)))
+    group_rank_list.sort(key=lambda x: x[4], reverse=True)
     my_gr_num = next((i+1 for i, gr in enumerate(group_rank_list) if gr[0] == group.id), None)
     all_group_rows = [{
         "id": item[0], "group_id": item[0], "name": item[1], "group_name": item[1],
-        "personal_points": item[2], "team_points": 0, "total_points": item[2],
-        "final_score": item[2], "avg_points": round(item[3], 2), "member_count": item[4],
+        "personal_points": item[2], "team_points": item[3], "total_points": item[4],
+        "final_score": item[4], "avg_points": round(item[4] / item[5], 2) if item[5] else 0, "member_count": item[5],
         "rank": index + 1, "is_my_group": item[0] == group.id,
     } for index, item in enumerate(group_rank_list)]
 
@@ -587,16 +607,26 @@ def get_team(
         "group": {
             "id": group.id, "name": group.name,
             "member_count": len(member_pts_data),
-            "total_points": total_pts,
-            "personal_points": total_pts,
-            "team_points": 0,
-            "final_score": total_pts,
-            "avg_points": round(avg_pts, 2),
+            "total_points": int(personal_pts) + int(team_pts),
+            "personal_points": int(personal_pts),
+            "team_points": int(team_pts),
+            "final_score": int(personal_pts) + int(team_pts),
+            "avg_points": round((int(personal_pts) + int(team_pts)) / len(member_pts_data), 2) if member_pts_data else 0,
             "rank": my_gr_num,
         },
         "members": member_pts_data,
         "all_groups": all_group_rows,
-        "team_point_records": [],
+        "project_personal_rankings": [dict(item, rank=index + 1, is_me=item["student_id"] == current_user.id) for index, item in enumerate(sorted([{
+            "student_id": enrollment.student_id,
+            "student_name": db.query(User.real_name).filter(User.id == enrollment.student_id).scalar() or "",
+            "group_name": db.query(Group.name).filter(Group.id == enrollment.group_id).scalar() if enrollment.group_id else None,
+            "total_points": int(db.query(func.coalesce(func.sum(Point.points), 0)).filter(Point.student_id == enrollment.student_id, Point.project_id == group.project_id, Point.status == PointStatus.ACTIVE.value).scalar() or 0),
+        } for enrollment in db.query(ProjectEnrollment).filter(ProjectEnrollment.project_id == group.project_id).all()], key=lambda item: item["total_points"], reverse=True))],
+        "team_point_records": [{
+            "id": item.id, "category": item.category, "item_name": item.item_name,
+            "points": item.points, "obtained_date": item.obtained_date,
+            "phase_name": db.query(Phase.name).filter(Phase.id == item.phase_id).scalar() if item.phase_id else None,
+        } for item in db.query(TeamPoint).filter(TeamPoint.group_id == group.id, TeamPoint.project_id == group.project_id, TeamPoint.status == PointStatus.ACTIVE.value).order_by(TeamPoint.obtained_date.desc(), TeamPoint.id.desc()).limit(20).all()],
     }
 
 

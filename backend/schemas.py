@@ -113,6 +113,8 @@ class GroupOut(BaseModel):
     id: int; name: str; year_id: int; project_id: int
     year_name: str = ""; project_name: str = ""
     member_count: int = 0; total_points: int = 0
+    personal_points: int = 0; team_points: int = 0; final_score: int = 0
+    leader_name: Optional[str] = None
     avg_points: float = 0.0; rank: Optional[int] = None
     status: str = "active"
     class Config: from_attributes = True

@@ -308,6 +308,29 @@ class Point(Base):
     phase = relationship("Phase", back_populates="points")
 
 
+class TeamPoint(Base):
+    """小组任务积分流水；只进入小组账户，不拆分给个人。"""
+    __tablename__ = "team_points"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    record_number = Column(String(80), nullable=True, unique=True, index=True)
+    group_id = Column(Integer, ForeignKey("groups.id"), nullable=False, index=True)
+    admin_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    year_id = Column(Integer, ForeignKey("academic_years.id"), nullable=False, index=True)
+    project_id = Column(Integer, ForeignKey("training_projects.id"), nullable=False, index=True)
+    phase_id = Column(Integer, ForeignKey("phases.id"), nullable=True, index=True)
+    points = Column(Integer, nullable=False)
+    category = Column(String(50), nullable=False, default="特殊调整")
+    item_name = Column(String(200), nullable=False)
+    task_key = Column(String(300), nullable=True, index=True)
+    obtained_date = Column(DateTime, nullable=True, default=lambda: datetime.now(timezone.utc))
+    data_source = Column(String(30), nullable=False, default="单个录入")
+    source_note = Column(Text, nullable=True)
+    remark = Column(Text, nullable=True)
+    status = Column(String(10), nullable=False, default=PointStatus.ACTIVE.value, index=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
 class PointRule(Base):
     """积分规则"""
     __tablename__ = "point_rules"

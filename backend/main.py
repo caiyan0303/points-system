@@ -41,6 +41,17 @@ with engine.begin() as connection:
           AND users.year_id IS NOT NULL
           AND users.project_id IS NOT NULL
     """))
+    connection.execute(text("""
+        INSERT INTO group_members (group_id, student_id, role, created_at)
+        SELECT project_enrollments.group_id, project_enrollments.student_id, NULL, CURRENT_TIMESTAMP
+        FROM project_enrollments
+        WHERE project_enrollments.group_id IS NOT NULL
+          AND NOT EXISTS (
+              SELECT 1 FROM group_members
+              WHERE group_members.group_id = project_enrollments.group_id
+                AND group_members.student_id = project_enrollments.student_id
+          )
+    """))
 
 app = FastAPI(
     title="Points Management System",

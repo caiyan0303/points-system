@@ -8,13 +8,13 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Body, File, UploadFile
 from sqlalchemy.orm import Session
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, or_, select, and_
 
 from database import get_db
 from models import (
     User, AcademicYear, TrainingProject, Group, GroupMember, ProjectEnrollment,
     Phase, PhaseParticipant, PhaseGroup,
-    Point, PointRule, RuleText, Product, Redemption, PrizeAward,
+    Point, TeamPoint, PointRule, RuleText, Product, Redemption, PrizeAward,
     OperationLog, Notification,
     UserRole, EmploymentStatus, AccountStatus,
     YearStatus, ProjectStatus, GroupStatus, PhaseStatus,
@@ -97,19 +97,43 @@ def _compute_student_points(db: Session, student_id: int, year_id: Optional[int]
 
 def _compute_group_stats(db: Session, group_id: int):
     """计算小组积分统计"""
-    members = db.query(GroupMember).filter(GroupMember.group_id == group_id).all()
-    member_ids = [m.student_id for m in members]
-    if not member_ids:
-        return 0, 0, 0.0
+    stats = _compute_group_breakdown(db, group_id)
+    return stats["member_count"], stats["final_score"], stats["avg_points"]
 
-    total_pts = db.query(func.coalesce(func.sum(Point.points), 0)).filter(
-        Point.student_id.in_(member_ids),
-        Point.status == PointStatus.ACTIVE.value,
+
+def _compute_group_breakdown(db: Session, group_id: int):
+    """按小组所属年度和项目直接从数据库汇总完整得分。"""
+    group = db.query(Group).filter(Group.id == group_id).first()
+    if not group:
+        return {"member_count": 0, "personal_points": 0, "team_points": 0, "final_score": 0, "avg_points": 0.0}
+    enrollment_ids = db.query(ProjectEnrollment.student_id).filter(
+        ProjectEnrollment.group_id == group_id,
+        ProjectEnrollment.project_id == group.project_id,
+    ).all()
+    membership_ids = db.query(GroupMember.student_id).filter(GroupMember.group_id == group_id).all()
+    member_ids = sorted({row[0] for row in enrollment_ids + membership_ids})
+    personal_points = 0
+    if member_ids:
+        personal_points = db.query(func.coalesce(func.sum(Point.points), 0)).filter(
+            Point.student_id.in_(member_ids),
+            Point.year_id == group.year_id,
+            Point.project_id == group.project_id,
+            Point.status == PointStatus.ACTIVE.value,
+        ).scalar() or 0
+    team_points = db.query(func.coalesce(func.sum(TeamPoint.points), 0)).filter(
+        TeamPoint.group_id == group_id,
+        TeamPoint.year_id == group.year_id,
+        TeamPoint.project_id == group.project_id,
+        TeamPoint.status == PointStatus.ACTIVE.value,
     ).scalar() or 0
-
-    member_count = len(member_ids)
-    avg_pts = total_pts / member_count if member_count > 0 else 0.0
-    return member_count, total_pts, avg_pts
+    final_score = int(personal_points) + int(team_points)
+    return {
+        "member_count": len(member_ids),
+        "personal_points": int(personal_points),
+        "team_points": int(team_points),
+        "final_score": final_score,
+        "avg_points": final_score / len(member_ids) if member_ids else 0.0,
+    }
 
 
 def _compute_group_period_stats(db: Session, group_id: int):
@@ -136,6 +160,20 @@ def _compute_group_period_stats(db: Session, group_id: int):
 def _ensure_not_none(val):
     """确保值不为 None"""
     return val if val is not None else 0
+
+
+def _team_point_payload(item: TeamPoint, db: Session):
+    return {
+        "id": item.id, "record_number": item.record_number, "group_id": item.group_id,
+        "group_name": db.query(Group.name).filter(Group.id == item.group_id).scalar() or "",
+        "year_id": item.year_id, "project_id": item.project_id, "phase_id": item.phase_id,
+        "project_name": db.query(TrainingProject.name).filter(TrainingProject.id == item.project_id).scalar() or "",
+        "phase_name": db.query(Phase.name).filter(Phase.id == item.phase_id).scalar() if item.phase_id else None,
+        "points": item.points, "category": item.category, "item_name": item.item_name,
+        "task_key": item.task_key, "obtained_date": item.obtained_date,
+        "data_source": item.data_source, "source_note": item.source_note,
+        "remark": item.remark, "status": item.status, "created_at": item.created_at,
+    }
 
 
 def _sync_project_phase_associations(db: Session, project_id: Optional[int]) -> bool:
@@ -1456,6 +1494,106 @@ def _collect_projects_groups_from_rows(db: Session, rows: list, invalid_projects
 
 # ═══════════════ Groups ═══════════════
 
+@router.get("/project-summary")
+def project_summary(
+    year_id: int = Query(...), project_id: int = Query(...),
+    current_user: User = Depends(require_admin), db: Session = Depends(get_db),
+):
+    """由数据库汇总完整项目，不受列表分页条数影响。"""
+    participant_ids = [row[0] for row in db.query(ProjectEnrollment.student_id).filter(
+        ProjectEnrollment.year_id == year_id, ProjectEnrollment.project_id == project_id,
+    ).distinct().all()]
+    personal_points = db.query(func.coalesce(func.sum(Point.points), 0)).filter(
+        Point.year_id == year_id, Point.project_id == project_id,
+        Point.status == PointStatus.ACTIVE.value,
+    ).scalar() or 0
+    available_points = 0
+    for student_id in participant_ids:
+        available_points += _compute_student_points(db, student_id, year_id, project_id)[2]
+    winner_rows = db.query(
+        User.id, User.real_name, Group.name.label("group_name"),
+        func.coalesce(func.sum(Point.points), 0).label("period_points"),
+    ).join(ProjectEnrollment, and_(
+        ProjectEnrollment.student_id == User.id,
+        ProjectEnrollment.year_id == year_id,
+        ProjectEnrollment.project_id == project_id,
+    )).outerjoin(Group, Group.id == ProjectEnrollment.group_id).outerjoin(Point, and_(
+        Point.student_id == User.id, Point.year_id == year_id, Point.project_id == project_id,
+        Point.status == PointStatus.ACTIVE.value,
+    )).group_by(User.id, User.real_name, Group.name).order_by(
+        func.coalesce(func.sum(Point.points), 0).desc(), User.id.asc(),
+    ).limit(3).all()
+    return {
+        "student_count": len(participant_ids), "personal_points": int(personal_points),
+        "available_points": int(available_points),
+        "personal_winners": [{"id": row.id, "real_name": row.real_name, "group_name": row.group_name, "period_points": int(row.period_points or 0)} for row in winner_rows],
+    }
+
+
+@router.get("/team-points")
+def list_team_points(
+    project_id: Optional[int] = Query(None), phase_id: Optional[int] = Query(None),
+    group_id: Optional[int] = Query(None), page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    current_user: User = Depends(require_admin), db: Session = Depends(get_db),
+):
+    q = db.query(TeamPoint)
+    if project_id: q = q.filter(TeamPoint.project_id == project_id)
+    if phase_id: q = q.filter(TeamPoint.phase_id == phase_id)
+    if group_id: q = q.filter(TeamPoint.group_id == group_id)
+    total = q.count()
+    items = q.order_by(TeamPoint.obtained_date.desc(), TeamPoint.id.desc()).offset((page - 1) * page_size).limit(page_size).all()
+    return {"items": [_team_point_payload(item, db) for item in items], "total": total, "page": page, "page_size": page_size, "total_pages": math.ceil(total / page_size) if total else 1}
+
+
+def _insert_team_point(db: Session, data: dict, admin_id: int):
+    group_id, year_id, project_id = int(data.get("group_id") or 0), int(data.get("year_id") or 0), int(data.get("project_id") or 0)
+    group = db.query(Group).filter(Group.id == group_id, Group.year_id == year_id, Group.project_id == project_id).first()
+    if not group: raise ValueError("所选小组不存在或不属于当前年度和项目")
+    points = int(data.get("points") or 0)
+    if points == 0: raise ValueError("积分值不能为 0")
+    item_name = str(data.get("item_name") or "").strip()
+    if not item_name: raise ValueError("积分事项不能为空")
+    task_key = str(data.get("task_key") or item_name).strip().lower()
+    phase_id = int(data["phase_id"]) if data.get("phase_id") else None
+    obtained = data.get("obtained_date")
+    if isinstance(obtained, str) and obtained:
+        obtained = datetime.fromisoformat(obtained.replace("Z", "+00:00"))
+    item = TeamPoint(
+        record_number=str(data.get("record_number") or f"TP-{uuid4().hex[:16]}").strip(),
+        group_id=group_id, admin_id=admin_id, year_id=year_id, project_id=project_id,
+        phase_id=phase_id, points=points, category=str(data.get("category") or "特殊调整"),
+        item_name=item_name, task_key=task_key, obtained_date=obtained or datetime.now(timezone.utc),
+        data_source=str(data.get("data_source") or "单个录入"), source_note=data.get("source_note"),
+        remark=data.get("remark"), status=PointStatus.ACTIVE.value,
+    )
+    db.add(item); db.flush(); return item
+
+
+@router.post("/team-points")
+def create_team_point(data: dict = Body(...), current_user: User = Depends(require_admin), db: Session = Depends(get_db)):
+    try: item = _insert_team_point(db, data, current_user.id)
+    except ValueError as error: raise HTTPException(status_code=400, detail=str(error)) from error
+    _log_operation(db, current_user.id, "录入小组积分", "team_point", item.id, f"{item.item_name} {item.points}分")
+    db.commit(); db.refresh(item); return _team_point_payload(item, db)
+
+
+@router.post("/team-points/import")
+def import_team_points(data: dict = Body(...), current_user: User = Depends(require_admin), db: Session = Depends(get_db)):
+    created, errors = 0, []
+    for index, record in enumerate(data.get("records") or []):
+        try: _insert_team_point(db, record, current_user.id); created += 1
+        except Exception as error: errors.append({"row": index + 2, "detail": str(error)})
+    db.commit(); return {"created": created, "errors": errors}
+
+
+@router.delete("/team-points/{record_id}")
+def delete_team_point(record_id: int, current_user: User = Depends(require_admin), db: Session = Depends(get_db)):
+    item = db.query(TeamPoint).filter(TeamPoint.id == record_id).first()
+    if not item: raise HTTPException(status_code=404, detail="小组积分记录不存在")
+    db.delete(item); _log_operation(db, current_user.id, "删除小组积分", "team_point", record_id, item.item_name)
+    db.commit(); return {"message": "小组积分已删除"}
+
 @router.get("/groups", response_model=List[GroupOut])
 def list_groups(
     year_id: int = Query(None),
@@ -1472,18 +1610,23 @@ def list_groups(
     groups = q.order_by(Group.id.desc()).all()
     result = []
     for g in groups:
-        member_count, total_pts, avg_pts = _compute_group_stats(db, g.id)
+        stats = _compute_group_breakdown(db, g.id)
         year_name = db.query(AcademicYear.name).filter(AcademicYear.id == g.year_id).scalar() or ""
         project_name = db.query(TrainingProject.name).filter(TrainingProject.id == g.project_id).scalar() or ""
+        leader_name = db.query(User.real_name).join(GroupMember, GroupMember.student_id == User.id).filter(
+            GroupMember.group_id == g.id, GroupMember.role == "小组长",
+        ).first()
         result.append(GroupOut(
             id=g.id, name=g.name, year_id=g.year_id, project_id=g.project_id,
             year_name=year_name, project_name=project_name,
-            member_count=member_count, total_points=total_pts,
-            avg_points=round(avg_pts, 2), rank=None, status=g.status,
+            member_count=stats["member_count"], total_points=stats["final_score"],
+            personal_points=stats["personal_points"], team_points=stats["team_points"], final_score=stats["final_score"],
+            avg_points=round(stats["avg_points"], 2), rank=None, status=g.status,
+            leader_name=leader_name[0] if leader_name else None,
         ))
 
     # 按 avg_points 排名
-    sorted_result = sorted(result, key=lambda x: x.avg_points, reverse=True)
+    sorted_result = sorted(result, key=lambda x: x.final_score, reverse=True)
     for i, gr in enumerate(sorted_result):
         gr.rank = i + 1
 
@@ -1540,14 +1683,15 @@ def update_group(
     db.commit()
     db.refresh(group)
 
-    member_count, total_pts, avg_pts = _compute_group_stats(db, group.id)
+    stats = _compute_group_breakdown(db, group.id)
     year_name = db.query(AcademicYear.name).filter(AcademicYear.id == group.year_id).scalar() or ""
     project_name = db.query(TrainingProject.name).filter(TrainingProject.id == group.project_id).scalar() or ""
     return GroupOut(
         id=group.id, name=group.name, year_id=group.year_id, project_id=group.project_id,
         year_name=year_name, project_name=project_name,
-        member_count=member_count, total_points=total_pts,
-        avg_points=round(avg_pts, 2), rank=None, status=group.status,
+        member_count=stats["member_count"], total_points=stats["final_score"],
+        personal_points=stats["personal_points"], team_points=stats["team_points"], final_score=stats["final_score"],
+        avg_points=round(stats["avg_points"], 2), rank=None, status=group.status,
     )
 
 
@@ -1577,6 +1721,7 @@ def delete_group(
     db.query(PrizeAward).filter(PrizeAward.group_id == group_id).update(
         {PrizeAward.group_id: None}, synchronize_session=False,
     )
+    db.query(TeamPoint).filter(TeamPoint.group_id == group_id).delete(synchronize_session=False)
     db.query(PhaseGroup).filter(PhaseGroup.group_id == group_id).delete(synchronize_session=False)
     db.query(GroupMember).filter(GroupMember.group_id == group_id).delete(synchronize_session=False)
     db.delete(group)
@@ -1601,7 +1746,7 @@ def get_group_detail(
     if not group:
         raise HTTPException(status_code=404, detail="小组不存在")
 
-    member_count, total_pts, avg_pts = _compute_group_stats(db, group.id)
+    stats = _compute_group_breakdown(db, group.id)
     year_name = db.query(AcademicYear.name).filter(AcademicYear.id == group.year_id).scalar() or ""
     project_name = db.query(TrainingProject.name).filter(TrainingProject.id == group.project_id).scalar() or ""
 
@@ -1613,7 +1758,7 @@ def get_group_detail(
         student = db.query(User).filter(User.id == gm.student_id).first()
         if not student:
             continue
-        period_pts, total_earned, available = _compute_student_points(db, student.id, student.year_id, student.project_id)
+        period_pts, total_earned, available = _compute_student_points(db, student.id, group.year_id, group.project_id)
         member_pts_list.append((gm.student_id, student.real_name, period_pts, total_earned, available))
 
     # 按 period_points 排名
@@ -1626,7 +1771,7 @@ def get_group_detail(
         student = db.query(User).filter(User.id == gm.student_id).first()
         if not student:
             continue
-        period_pts, total_earned, available = _compute_student_points(db, student.id, student.year_id, student.project_id)
+        period_pts, total_earned, available = _compute_student_points(db, student.id, group.year_id, group.project_id)
 
         # 各阶段积分
         phases = db.query(Phase).filter(Phase.project_id == group.project_id).order_by(Phase.id).all()
@@ -1683,8 +1828,9 @@ def get_group_detail(
     return GroupDetail(
         id=group.id, name=group.name, year_id=group.year_id, project_id=group.project_id,
         year_name=year_name, project_name=project_name,
-        member_count=member_count, total_points=total_pts,
-        avg_points=round(avg_pts, 2), rank=None, status=group.status,
+        member_count=stats["member_count"], total_points=stats["final_score"],
+        personal_points=stats["personal_points"], team_points=stats["team_points"], final_score=stats["final_score"],
+        avg_points=round(stats["avg_points"], 2), rank=None, status=group.status,
         members=members, phase_stats=phase_stats, awards=award_list,
     )
 
@@ -2079,14 +2225,20 @@ def _phase_group_ranking(db: Session, phase_id: int) -> List[dict]:
         total = db.query(func.coalesce(func.sum(Point.points), 0)).filter(
             Point.student_id.in_(member_ids), Point.phase_id == phase_id, Point.status == PointStatus.ACTIVE.value,
         ).scalar() or 0
-        avg = total / len(member_ids)
+        team_total = db.query(func.coalesce(func.sum(TeamPoint.points), 0)).filter(
+            TeamPoint.group_id == group.id, TeamPoint.phase_id == phase_id,
+            TeamPoint.status == PointStatus.ACTIVE.value,
+        ).scalar() or 0
+        final_score = int(total) + int(team_total)
+        avg = final_score / len(member_ids)
         rankings.append({
             "group_id": group.id, "group_name": group.name,
-            "total_points": total, "avg_points": round(avg, 2),
+            "personal_points": int(total), "team_points": int(team_total),
+            "total_points": final_score, "final_score": final_score, "avg_points": round(avg, 2),
             "member_count": len(member_ids),
         })
 
-    rankings.sort(key=lambda x: x["avg_points"], reverse=True)
+    rankings.sort(key=lambda x: x["final_score"], reverse=True)
     for i, r in enumerate(rankings):
         r["rank"] = i + 1
     return rankings
@@ -2135,6 +2287,7 @@ def delete_phase(
     db.query(PhaseParticipant).filter(PhaseParticipant.phase_id == phase_id).delete()
     db.query(PhaseGroup).filter(PhaseGroup.phase_id == phase_id).delete()
     db.query(Point).filter(Point.phase_id == phase_id).update({Point.phase_id: None})
+    db.query(TeamPoint).filter(TeamPoint.phase_id == phase_id).update({TeamPoint.phase_id: None})
     db.query(PrizeAward).filter(PrizeAward.phase_id == phase_id).update({PrizeAward.phase_id: None})
     name = phase.name
     db.delete(phase)
