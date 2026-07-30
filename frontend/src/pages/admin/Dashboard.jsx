@@ -12,6 +12,11 @@ import {
 
 const number = (value) => Number(value || 0)
 const dateText = (value) => value ? new Date(value).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '-'
+const errorText = (detail, fallback) => {
+  if (typeof detail === 'string') return detail
+  if (Array.isArray(detail)) return detail.map((item) => item?.msg || String(item)).join('；')
+  return fallback
+}
 
 export default function AdminDashboard() {
   const navigate = useNavigate()
@@ -32,7 +37,7 @@ export default function AdminDashboard() {
       const [phaseRes, groupRes, studentRes, pointRes, teamPointRes] = await Promise.all([
         api.get('/api/admin/phases', { params }),
         api.get('/api/admin/groups', { params }),
-        api.get('/api/admin/students', { params: { ...params, page: 1, page_size: 200 } }),
+        api.get('/api/admin/students', { params: { ...params, page: 1, page_size: 100 } }),
         api.get('/api/admin/points/records', { params: { ...params, page: 1, page_size: 10 } }),
         api.get('/api/admin/team-points', { params: { project_id: projectId, page: 1, page_size: 10 } }).catch(() => ({ data: { items: [] } })),
       ])
@@ -51,7 +56,7 @@ export default function AdminDashboard() {
       }))
       setDashboard({ phases, groups, students, personalRecords, teamRecords, champions })
     } catch (err) {
-      setError(err.response?.data?.detail || '项目积分看板加载失败')
+      setError(errorText(err.response?.data?.detail, '项目积分看板加载失败'))
     } finally { setLoading(false) }
   }, [yearId, projectId, selectedProject?.name])
 
