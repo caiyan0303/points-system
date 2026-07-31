@@ -67,12 +67,18 @@ export default function AdminPointsAdd() {
     api.get('/api/common/years').then(({ data }) => setYears(data.items || data))
     api.get('/api/common/projects').then(({ data }) => setProjects(data.items || data))
     api.get('/api/admin/groups').then(({ data }) => setGroups(data.items || data))
-    api.get('/api/admin/phases').then(({ data }) => setPhases(data.items || data))
   }, [])
 
   useEffect(() => {
     setSingleForm(current => ({ ...current, year_id: scopeYearId, project_id: scopeProjectId, phase_id: '', group_id: '', student_id: '' }))
     setBatchRows(current => current.map(row => ({ ...row, year_id: scopeYearId, project_id: scopeProjectId, phase_id: '', group_id: '' })))
+    setPhases([])
+    if (!scopeYearId || !scopeProjectId) return
+    api.get('/api/admin/phases', {
+      params: { year_id: scopeYearId, project_id: scopeProjectId },
+    })
+      .then(({ data }) => setPhases(data.items || data))
+      .catch(() => showToast('当前项目的阶段加载失败', 'error'))
   }, [scopeYearId, scopeProjectId])
 
   const handleSingleSubmit = async () => {
@@ -637,8 +643,8 @@ export default function AdminPointsAdd() {
               </div>
               <div>
                 <label className="block text-sm text-gray-600 mb-1">所属阶段 *</label>
-                <select value={singleForm.phase_id} onChange={(e) => setSingleForm({...singleForm, phase_id: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500">
-                  <option value="">不关联</option>
+                <select value={singleForm.phase_id} disabled={!scopeYearId || !scopeProjectId} onChange={(e) => setSingleForm({...singleForm, phase_id: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-gray-50 disabled:text-gray-400">
+                  <option value="">{scopeYearId && scopeProjectId ? '请选择阶段' : '请先在顶部选择年度和项目'}</option>
                   {phases.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                 </select>
               </div>
@@ -697,8 +703,8 @@ export default function AdminPointsAdd() {
                         </select>
                       </td>
                       <td className="px-2 py-2">
-                        <select value={row.phase_id} onChange={(e) => updateBatchRow(i, 'phase_id', e.target.value)} className="w-full px-2 py-1.5 border border-gray-200 rounded text-xs">
-                          <option value="">-</option>
+                        <select value={row.phase_id} disabled={!scopeYearId || !scopeProjectId} onChange={(e) => updateBatchRow(i, 'phase_id', e.target.value)} className="w-full px-2 py-1.5 border border-gray-200 rounded text-xs disabled:bg-gray-50 disabled:text-gray-400">
+                          <option value="">{scopeYearId && scopeProjectId ? '请选择' : '先选项目'}</option>
                           {phases.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                         </select>
                       </td>

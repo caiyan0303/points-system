@@ -100,10 +100,11 @@ export default function AdminPhases({ embedded = false, initialProjectId = '' })
 
   const handleEditInfo = async () => {
     try {
-      await api.put(`/api/admin/phases/${viewPhase.id}`, editForm)
+      const { data: updatedPhase } = await api.put(`/api/admin/phases/${viewPhase.id}`, editForm)
       showToast('阶段信息已更新')
       setEditForm(null)
-      openDetail(viewPhase)
+      await openDetail(updatedPhase)
+      fetchPhases()
     } catch (err) { showToast(err.response?.data?.detail || '操作失败', 'error') }
   }
 

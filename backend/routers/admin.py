@@ -2044,6 +2044,10 @@ def update_phase(
         raise HTTPException(status_code=404, detail="阶段不存在")
 
     updates = data.model_dump(exclude_unset=True)
+    date_changed = any(
+        key in updates and getattr(phase, key) != updates[key]
+        for key in ("start_date", "end_date")
+    )
     for key, val in updates.items():
         setattr(phase, key, val)
     if not phase.start_date or not phase.end_date:
