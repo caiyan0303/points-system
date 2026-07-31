@@ -570,6 +570,10 @@ def list_students(
 
         resolved_group_id = group.id if group else None
         group_name = group.name if group else None
+        group_role = db.query(GroupMember.role).filter(
+            GroupMember.group_id == resolved_group_id,
+            GroupMember.student_id == s.id,
+        ).scalar() if resolved_group_id else None
         period_pts, total_earned, available = _compute_student_points(
             db, s.id, resolved_year_id, resolved_project_id
         )
@@ -579,7 +583,7 @@ def list_students(
             system=s.system, level1_dept=s.level1_dept,
             year_id=resolved_year_id, project_id=resolved_project_id,
             year_name=year_name, project_name=project_name,
-            group_id=resolved_group_id, group_name=group_name,
+            group_id=resolved_group_id, group_name=group_name, group_role=group_role,
             employment_status=s.employment_status, account_status=s.account_status,
             period_points=period_pts, total_earned=total_earned, available_points=available,
             created_at=s.created_at,
@@ -704,6 +708,8 @@ def update_student(
     new_group_id = None
     updates = data.model_dump(exclude_unset=True)
     group_change_requested = "group_id" in updates or "group_name" in updates
+    role_change_requested = "group_role" in updates
+    new_group_role = str(updates.pop("group_role", "") or "").strip() or None
     if "group_id" in updates:
         new_group_id = updates.pop("group_id")
     new_group_name = str(updates.pop("group_name", "") or "").strip()
@@ -796,6 +802,42 @@ def update_student(
             ).first()
             if enrollment:
                 enrollment.group_id = new_group_id if new_group_id and new_group_id > 0 else None
+            phase_ids = db.query(Phase.id).filter(Phase.project_id == student.project_id)
+            db.query(PhaseParticipant).filter(
+                PhaseParticipant.student_id == student.id,
+                PhaseParticipant.phase_id.in_(phase_ids),
+            ).update(
+                {PhaseParticipant.group_id: new_group_id if new_group_id and new_group_id > 0 else None},
+                synchronize_session=False,
+            )
+
+    if role_change_requested:
+        if new_group_role not in (None, "小组长"):
+            raise HTTPException(status_code=400, detail="小组角色仅支持普通成员或小组长")
+        enrollment = db.query(ProjectEnrollment).filter(
+            ProjectEnrollment.student_id == student.id,
+            ProjectEnrollment.project_id == student.project_id,
+        ).first() if student.project_id else None
+        target_group_id = enrollment.group_id if enrollment else None
+        if new_group_role and not target_group_id:
+            raise HTTPException(status_code=400, detail="请先为学员选择所属小组")
+        if target_group_id:
+            db.flush()
+            membership = db.query(GroupMember).filter(
+                GroupMember.group_id == target_group_id,
+                GroupMember.student_id == student.id,
+            ).first()
+            if not membership:
+                membership = GroupMember(group_id=target_group_id, student_id=student.id)
+                db.add(membership)
+                db.flush()
+            if new_group_role == "小组长":
+                db.query(GroupMember).filter(
+                    GroupMember.group_id == target_group_id,
+                    GroupMember.id != membership.id,
+                    GroupMember.role == "小组长",
+                ).update({GroupMember.role: None}, synchronize_session=False)
+            membership.role = new_group_role
 
     _log_operation(db, current_user.id, "更新学员", "student", student_id, f"更新学员 {student.real_name}")
     db.commit()
@@ -1865,18 +1907,62 @@ def add_group_members(
         student = db.query(User).filter(User.id == sid).first()
         if not student:
             continue
+        project_group_ids = db.query(Group.id).filter(Group.project_id == group.project_id)
         existing = db.query(GroupMember).filter(
             GroupMember.group_id == group_id, GroupMember.student_id == sid,
         ).first()
-        if existing:
-            continue
-        gm = GroupMember(group_id=group_id, student_id=sid)
-        db.add(gm)
-        added += 1
+        if not existing:
+            db.query(GroupMember).filter(
+                GroupMember.student_id == sid,
+                GroupMember.group_id.in_(project_group_ids),
+            ).delete(synchronize_session=False)
+            db.add(GroupMember(group_id=group_id, student_id=sid))
+            added += 1
+        enrollment = db.query(ProjectEnrollment).filter(
+            ProjectEnrollment.project_id == group.project_id,
+            ProjectEnrollment.student_id == sid,
+        ).first()
+        if enrollment:
+            enrollment.group_id = group_id
+        phase_ids = db.query(Phase.id).filter(Phase.project_id == group.project_id)
+        db.query(PhaseParticipant).filter(
+            PhaseParticipant.student_id == sid,
+            PhaseParticipant.phase_id.in_(phase_ids),
+        ).update({PhaseParticipant.group_id: group_id}, synchronize_session=False)
 
     _log_operation(db, current_user.id, "添加小组成员", "group", group_id, f"添加 {added} 名成员")
     db.commit()
     return {"message": f"成功添加 {added} 名成员"}
+
+
+@router.put("/groups/{group_id}/members/{student_id}")
+def update_group_member_role(
+    group_id: int,
+    student_id: int,
+    data: dict = Body(...),
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    membership = db.query(GroupMember).filter(
+        GroupMember.group_id == group_id,
+        GroupMember.student_id == student_id,
+    ).first()
+    if not membership:
+        raise HTTPException(status_code=404, detail="该成员不在小组中")
+    role = str(data.get("role") or "").strip() or None
+    if role not in (None, "小组长"):
+        raise HTTPException(status_code=400, detail="小组角色仅支持普通成员或小组长")
+    if role == "小组长":
+        db.query(GroupMember).filter(
+            GroupMember.group_id == group_id,
+            GroupMember.id != membership.id,
+            GroupMember.role == "小组长",
+        ).update({GroupMember.role: None}, synchronize_session=False)
+    membership.role = role
+    action = "设置小组长" if role else "取消小组长"
+    _log_operation(db, current_user.id, action, "group", group_id, f"学员 {student_id}")
+    db.commit()
+    return {"message": "小组长已设置" if role else "小组长标记已取消"}
 
 
 @router.delete("/groups/{group_id}/members/{student_id}")
@@ -1891,6 +1977,19 @@ def remove_group_member(
     ).first()
     if not gm:
         raise HTTPException(status_code=404, detail="该成员不在小组中")
+    group = db.query(Group).filter(Group.id == group_id).first()
+    if group:
+        db.query(ProjectEnrollment).filter(
+            ProjectEnrollment.student_id == student_id,
+            ProjectEnrollment.project_id == group.project_id,
+            ProjectEnrollment.group_id == group_id,
+        ).update({ProjectEnrollment.group_id: None}, synchronize_session=False)
+        phase_ids = db.query(Phase.id).filter(Phase.project_id == group.project_id)
+        db.query(PhaseParticipant).filter(
+            PhaseParticipant.student_id == student_id,
+            PhaseParticipant.phase_id.in_(phase_ids),
+            PhaseParticipant.group_id == group_id,
+        ).update({PhaseParticipant.group_id: None}, synchronize_session=False)
     db.delete(gm)
     _log_operation(db, current_user.id, "移除小组成员", "group", group_id, f"移除学员 {student_id}")
     db.commit()

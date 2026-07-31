@@ -65,6 +65,7 @@ class StudentUpdate(BaseModel):
     year_id: Optional[int] = None; project_id: Optional[int] = None
     group_id: Optional[int] = None
     group_name: Optional[str] = None
+    group_role: Optional[str] = None
     employment_status: Optional[str] = None
     account_status: Optional[str] = None
 
@@ -76,6 +77,7 @@ class StudentBrief(BaseModel):
     year_id: Optional[int] = None; project_id: Optional[int] = None
     year_name: Optional[str] = None; project_name: Optional[str] = None
     group_id: Optional[int] = None; group_name: Optional[str] = None
+    group_role: Optional[str] = None
     employment_status: str = "在职"; account_status: str = "启用"
     period_points: int = 0; total_earned: int = 0; available_points: int = 0
     created_at: Optional[datetime] = None
