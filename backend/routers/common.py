@@ -7,7 +7,7 @@ from datetime import datetime
 
 from database import get_db
 from models import AcademicYear, TrainingProject, ProjectStatus, YearStatus, POINT_CATEGORIES
-from models import User, Group, GroupMember, ProjectEnrollment, Phase, PhaseParticipant, PhaseGroup, Point, Notification, UserRole, PointStatus
+from models import User, Group, GroupMember, ProjectEnrollment, Phase, PhaseParticipant, PhaseGroup, Point, TeamPoint, Notification, UserRole, PointStatus
 from schemas import YearCreate, YearOut, ProjectCreate, ProjectOut
 from auth import get_current_user, require_admin
 
@@ -210,6 +210,23 @@ def update_project(project_id: int, data: dict, current_user=Depends(require_adm
         if not year:
             raise HTTPException(status_code=404, detail="年度不存在")
         project.year_id = data["year_id"]
+    # 项目年度变更后，所有属于该项目的数据必须同步到相同年度，
+    # 否则“年度＋项目”筛选会把小组或阶段漏掉。
+    db.query(Group).filter(Group.project_id == project.id).update(
+        {Group.year_id: project.year_id}, synchronize_session=False,
+    )
+    db.query(ProjectEnrollment).filter(ProjectEnrollment.project_id == project.id).update(
+        {ProjectEnrollment.year_id: project.year_id}, synchronize_session=False,
+    )
+    db.query(Phase).filter(Phase.project_id == project.id).update(
+        {Phase.year_id: project.year_id}, synchronize_session=False,
+    )
+    db.query(Point).filter(Point.project_id == project.id).update(
+        {Point.year_id: project.year_id}, synchronize_session=False,
+    )
+    db.query(TeamPoint).filter(TeamPoint.project_id == project.id).update(
+        {TeamPoint.year_id: project.year_id}, synchronize_session=False,
+    )
     db.commit()
     return {"message": "项目已更新", "id": project.id}
 

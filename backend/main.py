@@ -52,6 +52,26 @@ with engine.begin() as connection:
                 AND group_members.student_id = project_enrollments.student_id
           )
     """))
+    # 项目年度是业务归属的唯一来源。修复历史上项目改年度后，
+    # 小组或阶段仍停留在旧年度而被看板筛选遗漏的数据。
+    connection.execute(text("""
+        UPDATE groups
+        SET year_id = (SELECT training_projects.year_id FROM training_projects WHERE training_projects.id = groups.project_id)
+        WHERE EXISTS (
+            SELECT 1 FROM training_projects
+            WHERE training_projects.id = groups.project_id
+              AND training_projects.year_id != groups.year_id
+        )
+    """))
+    connection.execute(text("""
+        UPDATE phases
+        SET year_id = (SELECT training_projects.year_id FROM training_projects WHERE training_projects.id = phases.project_id)
+        WHERE EXISTS (
+            SELECT 1 FROM training_projects
+            WHERE training_projects.id = phases.project_id
+              AND training_projects.year_id != phases.year_id
+        )
+    """))
 
 app = FastAPI(
     title="Points Management System",
