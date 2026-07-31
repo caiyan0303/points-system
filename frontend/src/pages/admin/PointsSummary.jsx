@@ -20,12 +20,12 @@ function MetricCard({ label, value: metricValue, unit = '分', icon: Icon, tone 
 
 function TopCard({ row, index, isTeam }) {
   const first = index === 0
-  return <div className={`relative overflow-hidden rounded-[24px] border p-5 ${first ? 'border-transparent bg-gradient-to-br from-indigo-600 via-violet-600 to-blue-500 text-white shadow-xl shadow-indigo-200' : 'border-indigo-100 bg-white text-slate-900 shadow-lg shadow-indigo-100/30'}`}>
+  return <div className={`relative overflow-hidden rounded-[24px] border p-5 ${first ? 'border-indigo-200 bg-gradient-to-br from-indigo-100 via-violet-100 to-cyan-100 text-slate-900 shadow-xl shadow-indigo-200/60' : 'border-indigo-100 bg-white text-slate-900 shadow-lg shadow-indigo-100/30'}`}>
     {first && <div className="absolute -right-8 -top-10 h-32 w-32 rounded-full bg-white/15" />}
-    <div className="relative flex items-center justify-between"><span className={`flex h-10 w-10 items-center justify-center rounded-2xl ${first ? 'bg-white/15' : 'bg-indigo-50 text-indigo-600'}`}>{first ? <Crown className="h-5 w-5" /> : <Medal className="h-5 w-5" />}</span><span className={`rounded-full px-3 py-1 text-[11px] font-black ${first ? 'bg-white/15' : 'bg-slate-100 text-slate-500'}`}>NO.{index + 1}</span></div>
+    <div className="relative flex items-center justify-between"><span className={`flex h-10 w-10 items-center justify-center rounded-2xl ${first ? 'bg-indigo-600 text-white shadow-md shadow-indigo-200' : 'bg-indigo-50 text-indigo-600'}`}>{first ? <Crown className="h-5 w-5" /> : <Medal className="h-5 w-5" />}</span><span className={`rounded-full px-3 py-1 text-[11px] font-black ${first ? 'bg-white/75 text-indigo-700' : 'bg-slate-100 text-slate-500'}`}>NO.{index + 1}</span></div>
     <p className="relative mt-6 truncate text-lg font-black">{isTeam ? row.name || row.group_name : row.real_name || row.username}</p>
-    <p className={`relative mt-1 text-xs ${first ? 'text-indigo-100' : 'text-slate-400'}`}>{isTeam ? `${number(row.member_count)} 名成员` : row.group_name || '暂未分组'}</p>
-    <p className={`relative mt-5 text-3xl font-black ${first ? 'text-white' : 'text-indigo-600'}`}>{number(isTeam ? value(row, 'final_score', 'total_points') : value(row, 'period_points', 'project_points', 'total_points')).toLocaleString()}<span className="ml-1 text-xs">分</span></p>
+    <p className="relative mt-1 text-xs text-slate-500">{isTeam ? `${number(row.member_count)} 名成员` : row.group_name || '暂未分组'}</p>
+    <p className="relative mt-5 text-3xl font-black text-indigo-600">{number(isTeam ? value(row, 'final_score', 'total_points') : value(row, 'period_points', 'project_points', 'total_points')).toLocaleString()}<span className="ml-1 text-xs">分</span></p>
   </div>
 }
 
@@ -86,8 +86,8 @@ export default function AdminPointsSummary({ type = 'personal' }) {
   }, [isTeam, rows])
 
   return <AppLayout>
-    <div className="mb-6 overflow-hidden rounded-[30px] border border-indigo-100 bg-gradient-to-r from-slate-950 via-indigo-950 to-indigo-800 px-6 py-6 text-white shadow-xl shadow-indigo-200/40">
-      <div className="flex flex-wrap items-end justify-between gap-5"><div><p className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[.22em] text-cyan-300"><Sparkles className="h-3.5 w-3.5" />{isTeam ? 'Group Points' : 'Personal Points'}</p><h1 className="mt-2 text-3xl font-black">{isTeam ? '小组积分管理' : '个人积分管理'}</h1><p className="mt-2 text-sm text-indigo-200">{selectedYear?.name || '未选择年度'} · {selectedProject?.name || '请先选择项目'}</p></div><div className="rounded-2xl bg-white/10 px-4 py-3 text-right ring-1 ring-white/10"><p className="text-[10px] font-bold text-indigo-200">当前管理对象</p><p className="mt-1 text-lg font-black">{metrics.count}<span className="ml-1 text-xs">{isTeam ? '个小组' : '名学员'}</span></p></div></div>
+    <div className="mb-6 overflow-hidden rounded-[30px] border border-indigo-100 bg-gradient-to-r from-indigo-50 via-violet-100 to-cyan-100 px-6 py-6 text-slate-900 shadow-xl shadow-indigo-200/40">
+      <div className="flex flex-wrap items-end justify-between gap-5"><div><p className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[.22em] text-violet-600"><Sparkles className="h-3.5 w-3.5" />{isTeam ? 'Group Points' : 'Personal Points'}</p><h1 className="mt-2 text-3xl font-black">{isTeam ? '小组积分管理' : '个人积分管理'}</h1><p className="mt-2 text-sm text-slate-500">{selectedYear?.name || '未选择年度'} · {selectedProject?.name || '请先选择项目'}</p></div><div className="rounded-2xl bg-white/75 px-4 py-3 text-right shadow-sm ring-1 ring-indigo-100"><p className="text-[10px] font-bold text-slate-500">当前管理对象</p><p className="mt-1 text-lg font-black text-indigo-700">{metrics.count}<span className="ml-1 text-xs">{isTeam ? '个小组' : '名学员'}</span></p></div></div>
     </div>
 
     <PointsPageTabs type={isTeam ? 'team' : 'personal'} />
