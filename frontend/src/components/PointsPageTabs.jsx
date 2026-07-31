@@ -11,7 +11,7 @@ export default function PointsPageTabs({ type }) {
   ]
 
   return (
-    <div className="inline-flex rounded-xl bg-gray-100 p-1 mb-6" aria-label={type === 'team' ? '小组积分功能切换' : '个人积分功能切换'}>
+    <div className="mb-6 grid w-full max-w-2xl grid-cols-3 rounded-[20px] border border-indigo-100 bg-white/85 p-1.5 shadow-lg shadow-indigo-100/30" aria-label={type === 'team' ? '小组积分功能切换' : '个人积分功能切换'}>
       {tabs.map(tab => {
         const active = location.pathname === tab.path
         const Icon = tab.icon
@@ -19,8 +19,8 @@ export default function PointsPageTabs({ type }) {
           <Link
             key={tab.path}
             to={tab.path}
-            className={`inline-flex min-w-32 items-center justify-center gap-2 rounded-lg px-5 py-2.5 text-sm font-medium transition-all ${
-              active ? 'bg-white text-indigo-700 shadow-sm' : 'text-gray-500 hover:text-gray-800'
+            className={`inline-flex items-center justify-center gap-2 rounded-[15px] px-4 py-3 text-sm font-black transition-all ${
+              active ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-lg shadow-indigo-200' : 'text-slate-400 hover:bg-indigo-50 hover:text-indigo-700'
             }`}
           >
             <Icon className="w-4 h-4" />

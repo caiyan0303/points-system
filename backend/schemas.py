@@ -168,6 +168,7 @@ class PhaseRanking(BaseModel):
 class GroupRanking(BaseModel):
     rank: int; group_id: int; group_name: str
     total_points: int; avg_points: float; member_count: int
+    personal_points: int = 0; team_points: int = 0; final_score: int = 0
 
 class ExcellentSelect(BaseModel):
     student_ids: List[int]

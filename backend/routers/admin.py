@@ -1510,7 +1510,7 @@ def project_summary(
     available_points = 0
     for student_id in participant_ids:
         available_points += _compute_student_points(db, student_id, year_id, project_id)[2]
-    winner_rows = db.query(
+    ranking_rows = db.query(
         User.id, User.real_name, Group.name.label("group_name"),
         func.coalesce(func.sum(Point.points), 0).label("period_points"),
     ).join(ProjectEnrollment, and_(
@@ -1522,11 +1522,25 @@ def project_summary(
         Point.status == PointStatus.ACTIVE.value,
     )).group_by(User.id, User.real_name, Group.name).order_by(
         func.coalesce(func.sum(Point.points), 0).desc(), User.id.asc(),
-    ).limit(3).all()
+    ).all()
+    personal_ranking = [
+        {
+            "id": row.id,
+            "student_id": row.id,
+            "real_name": row.real_name,
+            "student_name": row.real_name,
+            "group_name": row.group_name,
+            "period_points": int(row.period_points or 0),
+            "total_points": int(row.period_points or 0),
+            "rank": index + 1,
+        }
+        for index, row in enumerate(ranking_rows)
+    ]
     return {
         "student_count": len(participant_ids), "personal_points": int(personal_points),
         "available_points": int(available_points),
-        "personal_winners": [{"id": row.id, "real_name": row.real_name, "group_name": row.group_name, "period_points": int(row.period_points or 0)} for row in winner_rows],
+        "personal_winners": personal_ranking[:3],
+        "personal_ranking": personal_ranking,
     }
 
 
