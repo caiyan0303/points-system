@@ -2,8 +2,12 @@ import { getDatabase } from '@netlify/database'
 import { getStore } from '@netlify/blobs'
 import { createHmac, pbkdf2Sync, timingSafeEqual, randomBytes } from 'node:crypto'
 
-const database = getDatabase()
-const JWT_SECRET = process.env.JWT_SECRET || 'local-only-change-before-production'
+const runtimeEnv = (name) => (
+  typeof Netlify !== 'undefined' ? Netlify.env.get(name) : process.env[name]
+)
+const supabaseDatabaseUrl = runtimeEnv('SUPABASE_DB_URL')
+const database = getDatabase(supabaseDatabaseUrl ? { connectionString: supabaseDatabaseUrl } : undefined)
+const JWT_SECRET = runtimeEnv('JWT_SECRET') || 'local-only-change-before-production'
 
 const json = (data, status = 200) => new Response(JSON.stringify(data), {
   status,

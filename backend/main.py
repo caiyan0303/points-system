@@ -12,14 +12,17 @@ Base.metadata.create_all(bind=engine)
 
 # SQLite create_all does not add columns to an existing table. Keep older
 # installations compatible when project scheduling fields are introduced.
+database_dialect = engine.dialect.name
 project_columns = {column["name"] for column in inspect(engine).get_columns("training_projects")}
 with engine.begin() as connection:
     if "start_date" not in project_columns:
-        connection.execute(text("ALTER TABLE training_projects ADD COLUMN start_date DATETIME"))
+        timestamp_type = "TIMESTAMPTZ" if database_dialect == "postgresql" else "DATETIME"
+        connection.execute(text(f"ALTER TABLE training_projects ADD COLUMN start_date {timestamp_type}"))
     if "end_date" not in project_columns:
-        connection.execute(text("ALTER TABLE training_projects ADD COLUMN end_date DATETIME"))
-    connection.execute(text("""
-        INSERT OR IGNORE INTO project_enrollments
+        timestamp_type = "TIMESTAMPTZ" if database_dialect == "postgresql" else "DATETIME"
+        connection.execute(text(f"ALTER TABLE training_projects ADD COLUMN end_date {timestamp_type}"))
+    enrollment_insert = """
+        INSERT INTO project_enrollments
             (student_id, year_id, project_id, group_id, status, label, joined_at)
         SELECT
             users.id,
@@ -40,7 +43,12 @@ with engine.begin() as connection:
         WHERE users.role = 'student'
           AND users.year_id IS NOT NULL
           AND users.project_id IS NOT NULL
-    """))
+    """
+    if database_dialect == "postgresql":
+        enrollment_insert += " ON CONFLICT DO NOTHING"
+    else:
+        enrollment_insert = enrollment_insert.replace("INSERT INTO", "INSERT OR IGNORE INTO", 1)
+    connection.execute(text(enrollment_insert))
     connection.execute(text("""
         INSERT INTO group_members (group_id, student_id, role, created_at)
         SELECT project_enrollments.group_id, project_enrollments.student_id, NULL, CURRENT_TIMESTAMP
@@ -101,6 +109,16 @@ app.mount("/api/uploads", StaticFiles(directory=UPLOADS_DIR), name="uploads")
 @app.get("/api")
 def api_root():
     return {"message": "Points System API", "docs": "/docs"}
+
+
+@app.get("/api/health/database")
+def database_health():
+    with engine.connect() as connection:
+        connection.execute(text("SELECT 1"))
+    return {
+        "status": "ok",
+        "provider": "supabase-postgresql" if engine.dialect.name == "postgresql" else "local-sqlite",
+    }
 
 
 if os.path.exists(FRONTEND_DIR):
