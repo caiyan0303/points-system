@@ -45,7 +45,11 @@ else:
     # Supabase requires TLS. Disabling psycopg prepared statements keeps the
     # same URL compatible with Supavisor transaction pooling when necessary.
     engine_options.update({
-        "connect_args": {"sslmode": "require", "prepare_threshold": None},
+        "connect_args": {
+            "sslmode": "require",
+            "prepare_threshold": None,
+            "connect_timeout": 10,
+        },
         "pool_size": 5,
         "max_overflow": 5,
         "pool_recycle": 300,

@@ -536,47 +536,126 @@ def list_students(
     total = q.count()
     students = q.order_by(User.id.desc()).offset((page - 1) * page_size).limit(page_size).all()
 
+    student_ids = [student.id for student in students]
+    context_enrollments = {}
+    if student_ids and (project_id or year_id):
+        enrollment_query = db.query(ProjectEnrollment).filter(
+            ProjectEnrollment.student_id.in_(student_ids)
+        )
+        if project_id:
+            enrollment_query = enrollment_query.filter(ProjectEnrollment.project_id == project_id)
+        elif year_id:
+            enrollment_query = enrollment_query.filter(ProjectEnrollment.year_id == year_id)
+        for enrollment in enrollment_query.order_by(ProjectEnrollment.id.desc()).all():
+            context_enrollments.setdefault(enrollment.student_id, enrollment)
+
+    resolved_scope = {}
+    for student in students:
+        enrollment = context_enrollments.get(student.id)
+        resolved_scope[student.id] = (
+            enrollment.year_id if enrollment else student.year_id,
+            enrollment.project_id if enrollment else student.project_id,
+        )
+
+    resolved_year_ids = {scope[0] for scope in resolved_scope.values() if scope[0]}
+    resolved_project_ids = {scope[1] for scope in resolved_scope.values() if scope[1]}
+    year_names = dict(db.query(AcademicYear.id, AcademicYear.name).filter(
+        AcademicYear.id.in_(resolved_year_ids)
+    ).all()) if resolved_year_ids else {}
+    project_names = dict(db.query(TrainingProject.id, TrainingProject.name).filter(
+        TrainingProject.id.in_(resolved_project_ids)
+    ).all()) if resolved_project_ids else {}
+
+    group_rows = []
+    if student_ids:
+        group_rows = db.query(
+            GroupMember.student_id, GroupMember.group_id, GroupMember.role,
+            Group.name, Group.project_id,
+        ).join(Group, Group.id == GroupMember.group_id).filter(
+            GroupMember.student_id.in_(student_ids)
+        ).all()
+    group_options = {}
+    for row in group_rows:
+        group_options.setdefault(row.student_id, []).append(row)
+    group_by_id = {}
+    if group_id:
+        selected_group = db.query(Group).filter(Group.id == group_id).first()
+        if selected_group:
+            group_by_id[selected_group.id] = selected_group
+
+    active_points = []
+    if student_ids:
+        active_points = db.query(
+            Point.student_id, Point.year_id, Point.project_id, Point.points,
+        ).filter(
+            Point.student_id.in_(student_ids),
+            Point.status == PointStatus.ACTIVE.value,
+        ).all()
+    total_points_map = {student_id: 0 for student_id in student_ids}
+    period_points_map = {student_id: 0 for student_id in student_ids}
+    for row in active_points:
+        value = int(row.points or 0)
+        total_points_map[row.student_id] = total_points_map.get(row.student_id, 0) + value
+        scope_year_id, scope_project_id = resolved_scope.get(row.student_id, (None, None))
+        if (scope_year_id is None or row.year_id == scope_year_id) and (
+            scope_project_id is None or row.project_id == scope_project_id
+        ):
+            period_points_map[row.student_id] = period_points_map.get(row.student_id, 0) + value
+
+    redemption_rows = []
+    if student_ids:
+        redemption_rows = db.query(
+            Redemption.student_id, Redemption.status, Redemption.points_spent,
+        ).filter(Redemption.student_id.in_(student_ids)).all()
+    deducted_statuses = {
+        RedemptionStatus.APPROVED.value,
+        RedemptionStatus.PENDING_SHIP.value,
+        RedemptionStatus.SHIPPED.value,
+        RedemptionStatus.PENDING_PICKUP.value,
+        RedemptionStatus.RECEIVED.value,
+        RedemptionStatus.COMPLETED.value,
+        RedemptionStatus.PENDING.value,
+    }
+    deducted_points_map = {student_id: 0 for student_id in student_ids}
+    for row in redemption_rows:
+        if row.status in deducted_statuses:
+            deducted_points_map[row.student_id] = (
+                deducted_points_map.get(row.student_id, 0) + int(row.points_spent or 0)
+            )
+
     items = []
     for s in students:
-        context_enrollment = None
-        if project_id:
-            context_enrollment = db.query(ProjectEnrollment).filter(
-                ProjectEnrollment.student_id == s.id,
-                ProjectEnrollment.project_id == project_id,
-            ).first()
-        elif year_id:
-            context_enrollment = db.query(ProjectEnrollment).filter(
-                ProjectEnrollment.student_id == s.id,
-                ProjectEnrollment.year_id == year_id,
-            ).order_by(ProjectEnrollment.id.desc()).first()
+        context_enrollment = context_enrollments.get(s.id)
+        resolved_year_id, resolved_project_id = resolved_scope[s.id]
+        year_name = year_names.get(resolved_year_id)
+        project_name = project_names.get(resolved_project_id)
 
-        resolved_year_id = context_enrollment.year_id if context_enrollment else s.year_id
-        resolved_project_id = context_enrollment.project_id if context_enrollment else s.project_id
-        year_name = db.query(AcademicYear.name).filter(AcademicYear.id == resolved_year_id).scalar() if resolved_year_id else None
-        project_name = db.query(TrainingProject.name).filter(TrainingProject.id == resolved_project_id).scalar() if resolved_project_id else None
-
-        group = None
+        selected_group_row = None
         if group_id:
-            group = db.query(Group).filter(Group.id == group_id).first()
-        elif context_enrollment and context_enrollment.group_id:
-            group = db.query(Group).filter(Group.id == context_enrollment.group_id).first()
-        elif resolved_project_id:
-            group = db.query(Group).join(
-                GroupMember, GroupMember.group_id == Group.id
-            ).filter(
-                GroupMember.student_id == s.id,
-                Group.project_id == resolved_project_id,
-            ).first()
+            selected_group_row = next(
+                (row for row in group_options.get(s.id, []) if row.group_id == group_id), None
+            )
+            group = group_by_id.get(group_id)
+            resolved_group_id = group.id if group else None
+            group_name = group.name if group else None
+            group_role = selected_group_row.role if selected_group_row else None
+        else:
+            preferred_group_id = context_enrollment.group_id if context_enrollment else None
+            candidates = group_options.get(s.id, [])
+            selected_group_row = next(
+                (row for row in candidates if preferred_group_id and row.group_id == preferred_group_id),
+                None,
+            ) or next(
+                (row for row in candidates if resolved_project_id and row.project_id == resolved_project_id),
+                None,
+            )
+            resolved_group_id = selected_group_row.group_id if selected_group_row else None
+            group_name = selected_group_row.name if selected_group_row else None
+            group_role = selected_group_row.role if selected_group_row else None
 
-        resolved_group_id = group.id if group else None
-        group_name = group.name if group else None
-        group_role = db.query(GroupMember.role).filter(
-            GroupMember.group_id == resolved_group_id,
-            GroupMember.student_id == s.id,
-        ).scalar() if resolved_group_id else None
-        period_pts, total_earned, available = _compute_student_points(
-            db, s.id, resolved_year_id, resolved_project_id
-        )
+        period_pts = period_points_map.get(s.id, 0)
+        total_earned = total_points_map.get(s.id, 0)
+        available = max(total_earned - deducted_points_map.get(s.id, 0), 0)
         items.append(StudentBrief(
             id=s.id, username=s.username, real_name=s.real_name,
             email=s.email, phone=s.phone, address=s.address, department=s.department,
@@ -1643,6 +1722,47 @@ def import_team_points(data: dict = Body(...), current_user: User = Depends(requ
     db.commit(); return {"created": created, "errors": errors}
 
 
+@router.post("/team-points/delete-all")
+def delete_all_team_points(
+    data: dict = Body(...),
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    year_id = data.get("year_id")
+    project_id = data.get("project_id")
+    if not year_id or not project_id:
+        raise HTTPException(status_code=400, detail="请先选择年度和项目")
+    q = db.query(TeamPoint).filter(
+        TeamPoint.year_id == int(year_id),
+        TeamPoint.project_id == int(project_id),
+    )
+    if data.get("phase_id"):
+        q = q.filter(TeamPoint.phase_id == int(data["phase_id"]))
+    if data.get("group_id"):
+        q = q.filter(TeamPoint.group_id == int(data["group_id"]))
+    if data.get("category"):
+        q = q.filter(TeamPoint.category == str(data["category"]))
+    items = q.all()
+    if not items:
+        raise HTTPException(status_code=404, detail="当前筛选范围内没有小组积分流水")
+    deleted_count = len(items)
+    affected_groups = len({item.group_id for item in items})
+    removed_points = sum(item.points for item in items if item.status == PointStatus.ACTIVE.value)
+    for item in items:
+        db.delete(item)
+    _log_operation(
+        db, current_user.id, "一键删除小组积分流水", "team_point", None,
+        f"删除 {deleted_count} 条小组积分流水，影响 {affected_groups} 个小组，移除有效小组积分 {removed_points}",
+    )
+    db.commit()
+    return {
+        "message": f"已删除 {deleted_count} 条小组积分流水",
+        "deleted_count": deleted_count,
+        "affected_groups": affected_groups,
+        "removed_points": removed_points,
+    }
+
+
 @router.delete("/team-points/{record_id}")
 def delete_team_point(record_id: int, current_user: User = Depends(require_admin), db: Session = Depends(get_db)):
     item = db.query(TeamPoint).filter(TeamPoint.id == record_id).first()
@@ -1664,21 +1784,73 @@ def list_groups(
         q = q.filter(Group.project_id == project_id)
 
     groups = q.order_by(Group.id.desc()).all()
+    if not groups:
+        return []
+
+    group_ids = [group.id for group in groups]
+    group_map = {group.id: group for group in groups}
+    member_sets = {group.id: set() for group in groups}
+    membership_rows = db.query(GroupMember.group_id, GroupMember.student_id).filter(
+        GroupMember.group_id.in_(group_ids)
+    ).all()
+    for row in membership_rows:
+        member_sets[row.group_id].add(row.student_id)
+    enrollment_rows = db.query(
+        ProjectEnrollment.group_id, ProjectEnrollment.student_id, ProjectEnrollment.project_id,
+    ).filter(ProjectEnrollment.group_id.in_(group_ids)).all()
+    for row in enrollment_rows:
+        group = group_map.get(row.group_id)
+        if group and row.project_id == group.project_id:
+            member_sets[row.group_id].add(row.student_id)
+
+    all_member_ids = sorted({student_id for members in member_sets.values() for student_id in members})
+    point_rows = []
+    if all_member_ids:
+        point_rows = db.query(
+            Point.student_id, Point.year_id, Point.project_id, Point.points,
+        ).filter(
+            Point.student_id.in_(all_member_ids),
+            Point.status == PointStatus.ACTIVE.value,
+        ).all()
+
+    team_point_totals = dict(db.query(
+        TeamPoint.group_id, func.coalesce(func.sum(TeamPoint.points), 0),
+    ).filter(
+        TeamPoint.group_id.in_(group_ids),
+        TeamPoint.status == PointStatus.ACTIVE.value,
+    ).group_by(TeamPoint.group_id).all())
+    year_names = dict(db.query(AcademicYear.id, AcademicYear.name).filter(
+        AcademicYear.id.in_({group.year_id for group in groups})
+    ).all())
+    project_names = dict(db.query(TrainingProject.id, TrainingProject.name).filter(
+        TrainingProject.id.in_({group.project_id for group in groups})
+    ).all())
+    leader_names = dict(db.query(GroupMember.group_id, User.real_name).join(
+        User, User.id == GroupMember.student_id,
+    ).filter(
+        GroupMember.group_id.in_(group_ids),
+        GroupMember.role == "小组长",
+    ).all())
+
     result = []
     for g in groups:
-        stats = _compute_group_breakdown(db, g.id)
-        year_name = db.query(AcademicYear.name).filter(AcademicYear.id == g.year_id).scalar() or ""
-        project_name = db.query(TrainingProject.name).filter(TrainingProject.id == g.project_id).scalar() or ""
-        leader_name = db.query(User.real_name).join(GroupMember, GroupMember.student_id == User.id).filter(
-            GroupMember.group_id == g.id, GroupMember.role == "小组长",
-        ).first()
+        members = member_sets[g.id]
+        personal_points = sum(
+            int(row.points or 0)
+            for row in point_rows
+            if row.student_id in members and row.year_id == g.year_id and row.project_id == g.project_id
+        )
+        team_points = int(team_point_totals.get(g.id, 0) or 0)
+        final_score = personal_points + team_points
+        member_count = len(members)
         result.append(GroupOut(
             id=g.id, name=g.name, year_id=g.year_id, project_id=g.project_id,
-            year_name=year_name, project_name=project_name,
-            member_count=stats["member_count"], total_points=stats["final_score"],
-            personal_points=stats["personal_points"], team_points=stats["team_points"], final_score=stats["final_score"],
-            avg_points=round(stats["avg_points"], 2), rank=None, status=g.status,
-            leader_name=leader_name[0] if leader_name else None,
+            year_name=year_names.get(g.year_id, ""), project_name=project_names.get(g.project_id, ""),
+            member_count=member_count, total_points=final_score,
+            personal_points=personal_points, team_points=team_points, final_score=final_score,
+            avg_points=round(final_score / member_count, 2) if member_count else 0.0,
+            rank=None, status=g.status,
+            leader_name=leader_names.get(g.id),
         ))
 
     # 按 avg_points 排名
@@ -1719,6 +1891,63 @@ def create_group(
         year_name=year_name, project_name=project_name,
         member_count=0, total_points=0, avg_points=0.0, rank=None, status=group.status,
     )
+
+
+def _delete_group_records(db: Session, group: Group) -> int:
+    """Delete one group while retaining students and personal history."""
+    group_id = group.id
+    affected_members = db.query(GroupMember).filter(GroupMember.group_id == group_id).count()
+    db.query(ProjectEnrollment).filter(ProjectEnrollment.group_id == group_id).update(
+        {ProjectEnrollment.group_id: None}, synchronize_session=False,
+    )
+    db.query(PhaseParticipant).filter(PhaseParticipant.group_id == group_id).update(
+        {PhaseParticipant.group_id: None}, synchronize_session=False,
+    )
+    db.query(Point).filter(Point.group_id == group_id).update(
+        {Point.group_id: None}, synchronize_session=False,
+    )
+    db.query(PrizeAward).filter(PrizeAward.group_id == group_id).update(
+        {PrizeAward.group_id: None}, synchronize_session=False,
+    )
+    db.query(TeamPoint).filter(TeamPoint.group_id == group_id).delete(synchronize_session=False)
+    db.query(PhaseGroup).filter(PhaseGroup.group_id == group_id).delete(synchronize_session=False)
+    db.query(GroupMember).filter(GroupMember.group_id == group_id).delete(synchronize_session=False)
+    db.delete(group)
+    return affected_members
+
+
+@router.post("/groups/batch-delete")
+def batch_delete_groups(
+    data: dict = Body(...),
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    group_ids = sorted({int(value) for value in (data.get("group_ids") or []) if value})
+    if not group_ids:
+        raise HTTPException(status_code=400, detail="请选择需要删除的小组")
+    groups = db.query(Group).filter(Group.id.in_(group_ids)).all()
+    if not groups:
+        raise HTTPException(status_code=404, detail="所选小组不存在或已删除")
+    affected_members = 0
+    deleted_names = []
+    try:
+        for group in groups:
+            affected_members += _delete_group_records(db, group)
+            deleted_names.append(group.name)
+        _log_operation(
+            db, current_user.id, "一键删除小组", "group", None,
+            f"删除 {len(groups)} 个小组，{affected_members} 名成员变为未分组",
+        )
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=f"一键删除失败：{exc}") from exc
+    return {
+        "message": f"已删除 {len(groups)} 个小组，{affected_members} 名成员已变为未分组",
+        "deleted": len(groups),
+        "affected_members": affected_members,
+        "deleted_names": deleted_names,
+    }
 
 
 @router.put("/groups/{group_id}", response_model=GroupOut)
@@ -1762,25 +1991,7 @@ def delete_group(
         raise HTTPException(status_code=404, detail="小组不存在或已删除")
 
     group_name = group.name
-    affected_members = db.query(GroupMember).filter(GroupMember.group_id == group_id).count()
-
-    # 保留学员、积分和奖品历史，只解除它们与已删除小组的关联。
-    db.query(ProjectEnrollment).filter(ProjectEnrollment.group_id == group_id).update(
-        {ProjectEnrollment.group_id: None}, synchronize_session=False,
-    )
-    db.query(PhaseParticipant).filter(PhaseParticipant.group_id == group_id).update(
-        {PhaseParticipant.group_id: None}, synchronize_session=False,
-    )
-    db.query(Point).filter(Point.group_id == group_id).update(
-        {Point.group_id: None}, synchronize_session=False,
-    )
-    db.query(PrizeAward).filter(PrizeAward.group_id == group_id).update(
-        {PrizeAward.group_id: None}, synchronize_session=False,
-    )
-    db.query(TeamPoint).filter(TeamPoint.group_id == group_id).delete(synchronize_session=False)
-    db.query(PhaseGroup).filter(PhaseGroup.group_id == group_id).delete(synchronize_session=False)
-    db.query(GroupMember).filter(GroupMember.group_id == group_id).delete(synchronize_session=False)
-    db.delete(group)
+    affected_members = _delete_group_records(db, group)
     _log_operation(
         db, current_user.id, "删除小组", "group", group_id,
         f"删除小组 {group_name}，{affected_members} 名成员变为未分组",
@@ -1935,13 +2146,8 @@ def add_group_members(
     return {"message": f"成功添加 {added} 名成员"}
 
 
-@router.put("/groups/{group_id}/members/{student_id}")
-def update_group_member_role(
-    group_id: int,
-    student_id: int,
-    data: dict = Body(...),
-    current_user: User = Depends(require_admin),
-    db: Session = Depends(get_db),
+def _update_group_member_role(
+    db: Session, group_id: int, student_id: int, data: dict, admin_id: int,
 ):
     membership = db.query(GroupMember).filter(
         GroupMember.group_id == group_id,
@@ -1960,9 +2166,36 @@ def update_group_member_role(
         ).update({GroupMember.role: None}, synchronize_session=False)
     membership.role = role
     action = "设置小组长" if role else "取消小组长"
-    _log_operation(db, current_user.id, action, "group", group_id, f"学员 {student_id}")
+    _log_operation(db, admin_id, action, "group", group_id, f"学员 {student_id}")
     db.commit()
-    return {"message": "小组长已设置" if role else "小组长标记已取消"}
+    return {
+        "message": "小组长已设置" if role else "小组长标记已取消",
+        "group_id": group_id,
+        "student_id": student_id,
+        "role": role,
+    }
+
+
+@router.put("/groups/{group_id}/members/{student_id}")
+def update_group_member_role(
+    group_id: int,
+    student_id: int,
+    data: dict = Body(...),
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    return _update_group_member_role(db, group_id, student_id, data, current_user.id)
+
+
+@router.post("/groups/{group_id}/members/{student_id}/role")
+def set_group_member_role(
+    group_id: int,
+    student_id: int,
+    data: dict = Body(...),
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    return _update_group_member_role(db, group_id, student_id, data, current_user.id)
 
 
 @router.delete("/groups/{group_id}/members/{student_id}")
@@ -1981,19 +2214,19 @@ def remove_group_member(
     if group:
         db.query(ProjectEnrollment).filter(
             ProjectEnrollment.student_id == student_id,
-            ProjectEnrollment.project_id == group.project_id,
             ProjectEnrollment.group_id == group_id,
         ).update({ProjectEnrollment.group_id: None}, synchronize_session=False)
-        phase_ids = db.query(Phase.id).filter(Phase.project_id == group.project_id)
         db.query(PhaseParticipant).filter(
             PhaseParticipant.student_id == student_id,
-            PhaseParticipant.phase_id.in_(phase_ids),
             PhaseParticipant.group_id == group_id,
         ).update({PhaseParticipant.group_id: None}, synchronize_session=False)
-    db.delete(gm)
+    db.query(GroupMember).filter(
+        GroupMember.group_id == group_id,
+        GroupMember.student_id == student_id,
+    ).delete(synchronize_session=False)
     _log_operation(db, current_user.id, "移除小组成员", "group", group_id, f"移除学员 {student_id}")
     db.commit()
-    return {"message": "成员已移除"}
+    return {"message": "成员已移除，学员已变为未分组", "student_id": student_id, "group_id": None}
 
 
 # ═══════════════ Phases ═══════════════
@@ -2011,6 +2244,11 @@ def _auto_phase_status(phase: Phase):
         return PhaseStatus.IN_PROGRESS.value
     else:
         return PhaseStatus.CLOSED.value
+
+
+def _date_only(value):
+    """Compare calendar dates consistently across SQLite and Supabase TIMESTAMPTZ."""
+    return value.date() if value else None
 
 
 def _sync_phase_statuses(db: Session, project_id: int = None):
@@ -2086,11 +2324,11 @@ def create_phase(
         raise HTTPException(status_code=404, detail="项目不存在")
     if not data.start_date or not data.end_date:
         raise HTTPException(status_code=400, detail="请设置阶段开始和结束时间")
-    if data.start_date > data.end_date:
+    if _date_only(data.start_date) > _date_only(data.end_date):
         raise HTTPException(status_code=400, detail="阶段结束时间不能早于开始时间")
-    if project.start_date and data.start_date < project.start_date:
+    if project.start_date and _date_only(data.start_date) < _date_only(project.start_date):
         raise HTTPException(status_code=400, detail="阶段开始时间不能早于项目开始时间")
-    if project.end_date and data.end_date > project.end_date:
+    if project.end_date and _date_only(data.end_date) > _date_only(project.end_date):
         raise HTTPException(status_code=400, detail="阶段结束时间不能晚于项目结束时间")
     overlap = db.query(Phase).filter(
         Phase.project_id == data.project_id,
@@ -2151,12 +2389,12 @@ def update_phase(
         setattr(phase, key, val)
     if not phase.start_date or not phase.end_date:
         raise HTTPException(status_code=400, detail="请设置阶段开始和结束时间")
-    if phase.start_date > phase.end_date:
+    if _date_only(phase.start_date) > _date_only(phase.end_date):
         raise HTTPException(status_code=400, detail="阶段结束时间不能早于开始时间")
     project = db.query(TrainingProject).filter(TrainingProject.id == phase.project_id).first()
-    if project and project.start_date and phase.start_date < project.start_date:
+    if project and project.start_date and _date_only(phase.start_date) < _date_only(project.start_date):
         raise HTTPException(status_code=400, detail="阶段开始时间不能早于项目开始时间")
-    if project and project.end_date and phase.end_date > project.end_date:
+    if project and project.end_date and _date_only(phase.end_date) > _date_only(project.end_date):
         raise HTTPException(status_code=400, detail="阶段结束时间不能晚于项目结束时间")
     if date_changed:
         overlap = db.query(Phase).filter(
@@ -2774,6 +3012,54 @@ def batch_delete_points(
         "deleted_count": deleted_count,
         "affected_students": affected_students,
         "removed_points": total_change,
+    }
+
+
+@router.post("/points/delete-all")
+def delete_all_points(
+    data: dict = Body(...),
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    year_id = data.get("year_id")
+    project_id = data.get("project_id")
+    if not year_id or not project_id:
+        raise HTTPException(status_code=400, detail="请先选择年度和项目")
+    q = db.query(Point).filter(
+        Point.year_id == int(year_id),
+        Point.project_id == int(project_id),
+    )
+    if data.get("phase_id"):
+        q = q.filter(Point.phase_id == int(data["phase_id"]))
+    if data.get("category"):
+        q = q.filter(Point.category == str(data["category"]))
+    keyword = str(data.get("keyword") or "").strip()
+    if keyword:
+        matching_students = db.query(User.id).filter(User.real_name.contains(keyword))
+        q = q.filter(or_(
+            Point.student_id.in_(matching_students),
+            Point.description.contains(keyword),
+            Point.item_name.contains(keyword),
+            Point.record_number.contains(keyword),
+        ))
+    items = q.all()
+    if not items:
+        raise HTTPException(status_code=404, detail="当前筛选范围内没有个人积分流水")
+    deleted_count = len(items)
+    affected_students = len({item.student_id for item in items})
+    removed_points = sum(item.points for item in items if item.status == PointStatus.ACTIVE.value)
+    for item in items:
+        db.delete(item)
+    _log_operation(
+        db, current_user.id, "一键删除个人积分流水", "point", None,
+        f"删除 {deleted_count} 条个人积分流水，影响 {affected_students} 名学员，移除有效积分 {removed_points}",
+    )
+    db.commit()
+    return {
+        "message": f"已删除 {deleted_count} 条个人积分流水",
+        "deleted_count": deleted_count,
+        "affected_students": affected_students,
+        "removed_points": removed_points,
     }
 
 

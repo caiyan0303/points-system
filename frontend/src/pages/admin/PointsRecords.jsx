@@ -28,6 +28,7 @@ export default function AdminPointsRecords() {
   const [phases, setPhases] = useState([])
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
+  const [totalRecords, setTotalRecords] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [toast, setToast] = useState(null)
@@ -46,6 +47,7 @@ export default function AdminPointsRecords() {
   const [selectedIds, setSelectedIds] = useState([])
   const [deleteTargets, setDeleteTargets] = useState([])
   const [deleting, setDeleting] = useState(false)
+  const [deleteAllConfirm, setDeleteAllConfirm] = useState(false)
 
   const showToast = (msg, type = 'success') => { setToast({ msg, type }); setTimeout(() => setToast(null), 3000) }
 
@@ -60,7 +62,7 @@ export default function AdminPointsRecords() {
     if (dateFrom) params.date_from = dateFrom
     if (dateTo) params.date_to = dateTo
     api.get('/api/admin/points/records', { params })
-      .then(({ data }) => { setRecords(data.items || data); setSelectedIds([]); setTotalPages(data.total_pages || 1); setLoading(false) })
+      .then(({ data }) => { setRecords(data.items || data); setSelectedIds([]); setTotalRecords(data.total ?? (data.items || data).length); setTotalPages(data.total_pages || 1); setLoading(false) })
       .catch((err) => { setError(err.response?.data?.detail || '加载失败'); setLoading(false) })
   }
 
@@ -95,6 +97,25 @@ export default function AdminPointsRecords() {
     }
   }
 
+  const handleDeleteAll = async () => {
+    if (!yearId || !projectId) return showToast('请先选择年度和项目', 'error')
+    setDeleting(true)
+    try {
+      const { data } = await api.post('/api/admin/points/delete-all', {
+        year_id: Number(yearId), project_id: Number(projectId),
+        phase_id: phaseId ? Number(phaseId) : null, category, keyword,
+      })
+      showToast(data.message || '个人积分流水已删除')
+      setDeleteAllConfirm(false)
+      setPage(1)
+      fetchRecords()
+    } catch (err) {
+      showToast(err.response?.data?.detail || '一键删除失败', 'error')
+    } finally {
+      setDeleting(false)
+    }
+  }
+
   const handleExport = () => {
     const params = {}
     if (keyword) params.keyword = keyword
@@ -121,6 +142,16 @@ export default function AdminPointsRecords() {
           <p className="text-gray-500 mt-1">录入个人积分或查看积分流水</p>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => {
+              if (!yearId || !projectId) return showToast('请先选择年度和项目', 'error')
+              setDeleteAllConfirm(true)
+            }}
+            disabled={loading || !yearId || !projectId || totalRecords === 0}
+            className="flex items-center gap-2 px-4 py-2.5 border border-red-200 text-red-600 rounded-lg text-sm font-medium hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <Trash2 className="w-4 h-4" /> 一键删除流水
+          </button>
           {selectedIds.length > 0 && (
             <button onClick={() => setDeleteTargets(selectedIds)} className="flex items-center gap-2 px-4 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700">
               <Trash2 className="w-4 h-4" /> 批量删除（{selectedIds.length}）
@@ -293,6 +324,21 @@ export default function AdminPointsRecords() {
             <div className="flex gap-3 mt-6">
               <button onClick={() => setDeleteTargets([])} disabled={deleting} className="flex-1 py-2.5 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50">取消</button>
               <button onClick={handleDelete} disabled={deleting} className="flex-1 py-2.5 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50">{deleting ? '删除中...' : '确认删除'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {deleteAllConfirm && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-red-50 text-red-600"><Trash2 className="h-6 w-6" /></div>
+            <h3 className="mt-4 text-lg font-semibold text-gray-900">确认一键删除个人积分流水</h3>
+            <p className="mt-3 text-sm leading-6 text-gray-600">将删除当前年度、项目及筛选条件下的 <strong className="text-red-600">{totalRecords}</strong> 条个人积分流水。</p>
+            <div className="mt-3 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm leading-6 text-red-700">删除后无法恢复，学员积分、可兑换积分、个人排名和小组最终得分会自动重新计算。</div>
+            <div className="flex gap-3 mt-6">
+              <button onClick={() => setDeleteAllConfirm(false)} disabled={deleting} className="flex-1 py-2.5 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50">取消</button>
+              <button onClick={handleDeleteAll} disabled={deleting} className="flex-1 py-2.5 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50">{deleting ? '正在删除...' : `确认删除 ${totalRecords} 条`}</button>
             </div>
           </div>
         </div>

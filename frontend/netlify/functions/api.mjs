@@ -628,6 +628,41 @@ async function adminExtendedRoutes(request, pathname, url) {
     await syncProjectPhaseAssociations(projectId)
     return json(created,201)
   }
+  if (pathname === '/api/admin/groups/batch-delete' && request.method === 'POST') {
+    const input=await body(request)
+    const groupIds=[...new Set((input.group_ids||[]).map(Number).filter(Boolean))]
+    if (!groupIds.length) return json({detail:'请选择需要删除的小组'},400)
+    const existing=await rows('SELECT id,name FROM groups WHERE id=ANY($1::bigint[])',[groupIds])
+    if (!existing.length) return json({detail:'所选小组不存在或已删除'},404)
+    const existingIds=existing.map(item=>Number(item.id))
+    const affected=Number((await one('SELECT COUNT(*)::int AS count FROM group_members WHERE group_id=ANY($1::bigint[])',[existingIds]))?.count||0)
+    await rows('UPDATE project_enrollments SET group_id=NULL WHERE group_id=ANY($1::bigint[])',[existingIds])
+    await rows('UPDATE phase_participants SET group_id=NULL WHERE group_id=ANY($1::bigint[])',[existingIds])
+    await rows('UPDATE points SET group_id=NULL WHERE group_id=ANY($1::bigint[])',[existingIds])
+    await rows('UPDATE prize_awards SET group_id=NULL WHERE group_id=ANY($1::bigint[])',[existingIds])
+    await rows('DELETE FROM team_points WHERE group_id=ANY($1::bigint[])',[existingIds])
+    await rows('DELETE FROM phase_groups WHERE group_id=ANY($1::bigint[])',[existingIds])
+    await rows('DELETE FROM group_members WHERE group_id=ANY($1::bigint[])',[existingIds])
+    await rows('DELETE FROM groups WHERE id=ANY($1::bigint[])',[existingIds])
+    return json({
+      message:`已删除 ${existing.length} 个小组，${affected} 名成员已变为未分组`,
+      deleted:existing.length,
+      affected_members:affected,
+      deleted_names:existing.map(item=>item.name),
+    })
+  }
+  const groupMemberRoleRoute=pathname.match(/^\/api\/admin\/groups\/(\d+)\/members\/(\d+)\/role$/)
+  if(groupMemberRoleRoute&&request.method==='POST'){
+    const groupId=Number(groupMemberRoleRoute[1]),memberId=Number(groupMemberRoleRoute[2]),input=await body(request)
+    if(!await one('SELECT id FROM group_members WHERE group_id=$1 AND student_id=$2',[groupId,memberId]))return json({detail:'该学员不属于当前小组'},404)
+    if(input.role==='小组长'){
+      await rows("UPDATE group_members SET role=NULL WHERE group_id=$1 AND role='小组长'",[groupId])
+      await rows("UPDATE group_members SET role='小组长' WHERE group_id=$1 AND student_id=$2",[groupId,memberId])
+      return json({message:'小组长已设置',group_id:groupId,student_id:memberId,role:'小组长'})
+    }
+    await rows('UPDATE group_members SET role=NULL WHERE group_id=$1 AND student_id=$2',[groupId,memberId])
+    return json({message:'小组长标记已取消',group_id:groupId,student_id:memberId,role:null})
+  }
   const groupRoute=pathname.match(/^\/api\/admin\/groups\/(\d+)(?:\/members(?:\/(\d+))?)?$/)
   if (groupRoute) {
     const groupId=Number(groupRoute[1]),memberId=numberOrNull(groupRoute[2]); const group=await one('SELECT * FROM groups WHERE id=$1',[groupId])
@@ -657,7 +692,7 @@ async function adminExtendedRoutes(request, pathname, url) {
       await rows('UPDATE group_members SET role=NULL WHERE group_id=$1 AND student_id=$2',[groupId,memberId])
       return json({message:'小组长标记已取消'})
     }
-    if (memberId&&request.method==='DELETE') { await rows('DELETE FROM group_members WHERE group_id=$1 AND student_id=$2',[groupId,memberId]); await rows('UPDATE project_enrollments SET group_id=NULL WHERE project_id=$1 AND student_id=$2',[group.project_id,memberId]); await syncProjectPhaseAssociations(group.project_id); return json({message:'成员已移除'}) }
+    if (memberId&&request.method==='DELETE') { await rows('DELETE FROM group_members WHERE group_id=$1 AND student_id=$2',[groupId,memberId]); await rows('UPDATE project_enrollments SET group_id=NULL WHERE group_id=$1 AND student_id=$2',[groupId,memberId]); await rows('UPDATE phase_participants SET group_id=NULL WHERE group_id=$1 AND student_id=$2',[groupId,memberId]); await syncProjectPhaseAssociations(group.project_id); return json({message:'成员已移除，学员已变为未分组',student_id:memberId,group_id:null}) }
   }
 
   const phaseRankingRoute=pathname.match(/^\/api\/admin\/phases\/(\d+)\/(ranking|group-ranking)$/)
@@ -741,6 +776,17 @@ async function adminExtendedRoutes(request, pathname, url) {
     }
     return json(result)
   }
+  if(pathname==='/api/admin/team-points/delete-all'&&request.method==='POST'){
+    const input=await body(request),yearId=numberOrNull(input.year_id),projectId=numberOrNull(input.project_id),phaseId=numberOrNull(input.phase_id),groupId=numberOrNull(input.group_id),category=String(input.category||'')
+    if(!yearId||!projectId)return json({detail:'请先选择年度和项目'},400)
+    const args=[yearId,projectId,phaseId,groupId,category]
+    const where="year_id=$1 AND project_id=$2 AND ($3::bigint IS NULL OR phase_id=$3) AND ($4::bigint IS NULL OR group_id=$4) AND ($5='' OR category=$5)"
+    const deleted=await rows(`DELETE FROM team_points WHERE ${where} RETURNING group_id,points,status`,args)
+    if(!deleted.length)return json({detail:'当前筛选范围内没有小组积分流水'},404)
+    const affectedGroups=new Set(deleted.map(item=>Number(item.group_id))).size
+    const removedPoints=deleted.filter(item=>['有效','active'].includes(item.status)).reduce((sum,item)=>sum+Number(item.points||0),0)
+    return json({message:`已删除 ${deleted.length} 条小组积分流水`,deleted_count:deleted.length,affected_groups:affectedGroups,removed_points:removedPoints})
+  }
   const teamPointDelete=pathname.match(/^\/api\/admin\/team-points\/(\d+)$/);if(teamPointDelete&&request.method==='DELETE'){
     const id=Number(teamPointDelete[1]),record=await one('SELECT project_id,phase_id,category,task_key FROM team_points WHERE id=$1',[id])
     if(!record)return json({detail:'小组积分记录不存在'},404)
@@ -766,6 +812,17 @@ async function adminExtendedRoutes(request, pathname, url) {
     return new Response(csv,{headers:{'content-type':'text/csv; charset=utf-8','content-disposition':'attachment; filename="points_records.csv"'}})
   }
   if (pathname === '/api/admin/points/batch-delete' && request.method === 'POST') { const input=await body(request); const ids=(input.point_ids||[]).map(Number); await rows('DELETE FROM points WHERE id=ANY($1::bigint[])',[ids]); return json({message:`已删除 ${ids.length} 条积分`}) }
+  if (pathname === '/api/admin/points/delete-all' && request.method === 'POST') {
+    const input=await body(request),yearId=numberOrNull(input.year_id),projectId=numberOrNull(input.project_id),phaseId=numberOrNull(input.phase_id),category=String(input.category||''),keyword=String(input.keyword||'').trim()
+    if(!yearId||!projectId)return json({detail:'请先选择年度和项目'},400)
+    const args=[yearId,projectId,phaseId,category,`%${keyword}%`]
+    const where="pt.year_id=$1 AND pt.project_id=$2 AND ($3::bigint IS NULL OR pt.phase_id=$3) AND ($4='' OR pt.category=$4) AND ($5='%%' OR EXISTS(SELECT 1 FROM users u WHERE u.id=pt.student_id AND u.real_name ILIKE $5) OR pt.description ILIKE $5 OR pt.item_name ILIKE $5 OR pt.record_number ILIKE $5)"
+    const deleted=await rows(`DELETE FROM points pt WHERE ${where} RETURNING student_id,points,status`,args)
+    if(!deleted.length)return json({detail:'当前筛选范围内没有个人积分流水'},404)
+    const affectedStudents=new Set(deleted.map(item=>Number(item.student_id))).size
+    const removedPoints=deleted.filter(item=>['有效','active'].includes(item.status)).reduce((sum,item)=>sum+Number(item.points||0),0)
+    return json({message:`已删除 ${deleted.length} 条个人积分流水`,deleted_count:deleted.length,affected_students:affectedStudents,removed_points:removedPoints})
+  }
   const pointDelete=pathname.match(/^\/api\/admin\/points\/(\d+)$/); if(pointDelete&&request.method==='DELETE'){await rows('DELETE FROM points WHERE id=$1',[Number(pointDelete[1])]);return json({message:'积分已删除'})}
   if(pointDelete&&request.method==='PUT'){const input=await body(request);return json(await one(`UPDATE points SET points=COALESCE($1,points),category=COALESCE($2,category),description=$3,year_id=COALESCE($4,year_id),project_id=COALESCE($5,project_id),phase_id=$6,group_id=$7,obtained_date=COALESCE($8,obtained_date) WHERE id=$9 RETURNING *`,[numberOrNull(input.points),input.category||null,input.description||null,numberOrNull(input.year_id),numberOrNull(input.project_id),numberOrNull(input.phase_id),numberOrNull(input.group_id),input.obtained_date||null,Number(pointDelete[1])]))}
 

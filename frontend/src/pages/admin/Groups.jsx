@@ -23,6 +23,8 @@ export default function AdminGroups() {
   const [selectedStudent, setSelectedStudent] = useState('')
   const [detailTab, setDetailTab] = useState('members')
   const [deleteGroup, setDeleteGroup] = useState(null)
+  const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState(false)
+  const [bulkDeleting, setBulkDeleting] = useState(false)
 
   const showToast = (msg, type = 'success') => { setToast({ msg, type }); setTimeout(() => setToast(null), 3000) }
 
@@ -76,7 +78,8 @@ export default function AdminGroups() {
       showToast('成员已添加')
       setAddMemberModal(false)
       setSelectedStudent('')
-      openDetail(viewGroup)
+      await openDetail(viewGroup)
+      fetchGroups()
     } catch (err) { showToast(err.response?.data?.detail || '操作失败', 'error') }
   }
 
@@ -85,16 +88,17 @@ export default function AdminGroups() {
     try {
       await api.delete(`/api/admin/groups/${viewGroup.id}/members/${studentId}`)
       showToast('成员已移除')
-      openDetail(viewGroup)
+      await openDetail(viewGroup)
+      fetchGroups()
     } catch (err) { showToast(err.response?.data?.detail || '操作失败', 'error') }
   }
 
   const handleLeader = async (member) => {
     try {
       const nextRole = member.role === '小组长' ? '' : '小组长'
-      const { data } = await api.put(`/api/admin/groups/${viewGroup.id}/members/${member.student_id}`, { role: nextRole })
+      const { data } = await api.post(`/api/admin/groups/${viewGroup.id}/members/${member.student_id}/role`, { role: nextRole })
       showToast(data.message || (nextRole ? '小组长已设置' : '小组长标记已取消'))
-      openDetail(viewGroup)
+      await openDetail(viewGroup)
       fetchGroups()
     } catch (err) { showToast(err.response?.data?.detail || '小组长设置失败', 'error') }
   }
@@ -113,6 +117,24 @@ export default function AdminGroups() {
     } catch (err) {
       showToast(err.response?.data?.detail || '删除失败', 'error')
       setDeleteGroup(null)
+    }
+  }
+
+  const handleBatchDelete = async () => {
+    if (!yearId || !projectId) return showToast('请先在顶部选择年度和项目', 'error')
+    if (!groups.length) return showToast('当前项目没有可删除的小组', 'error')
+    setBulkDeleting(true)
+    try {
+      const { data } = await api.post('/api/admin/groups/batch-delete', { group_ids: groups.map(group => group.id) })
+      showToast(data.message || `已删除 ${groups.length} 个小组`)
+      setBulkDeleteConfirm(false)
+      setViewGroup(null)
+      setGroupDetail(null)
+      fetchGroups()
+    } catch (err) {
+      showToast(err.response?.data?.detail || '一键删除失败', 'error')
+    } finally {
+      setBulkDeleting(false)
     }
   }
 
@@ -262,9 +284,22 @@ export default function AdminGroups() {
               <h1 className="text-2xl font-bold text-gray-900">小组管理</h1>
               <p className="text-gray-500 mt-1">管理学员分组</p>
             </div>
-            <button onClick={() => { setCreateForm({ name: '', year_id: yearId || '', project_id: projectId || '' }); setCreateModal(true) }} className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700">
-              <Plus className="w-4 h-4" /> 创建小组
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => {
+                  if (!yearId || !projectId) return showToast('请先在顶部选择年度和项目', 'error')
+                  if (!groups.length) return showToast('当前项目没有可删除的小组', 'error')
+                  setBulkDeleteConfirm(true)
+                }}
+                disabled={loading || !yearId || !projectId || !groups.length}
+                className="flex items-center gap-2 px-4 py-2.5 border border-red-200 text-red-600 rounded-lg text-sm font-medium hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <Trash2 className="w-4 h-4" /> 一键删除
+              </button>
+              <button onClick={() => { setCreateForm({ name: '', year_id: yearId || '', project_id: projectId || '' }); setCreateModal(true) }} className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700">
+                <Plus className="w-4 h-4" /> 创建小组
+              </button>
+            </div>
           </div>
           <InformationPageTabs />
 
@@ -397,6 +432,29 @@ export default function AdminGroups() {
             <div className="flex gap-3 mt-6">
               <button onClick={() => setDeleteGroup(null)} className="flex-1 py-2.5 text-sm font-medium border border-gray-200 rounded-lg hover:bg-gray-50">取消</button>
               <button onClick={handleDeleteGroup} className="flex-1 py-2.5 text-sm font-medium bg-red-600 text-white rounded-lg hover:bg-red-700">确认删除</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {bulkDeleteConfirm && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-red-50 text-red-600">
+              <Trash2 className="h-6 w-6" />
+            </div>
+            <h3 className="mt-4 text-lg font-semibold text-gray-900">确认一键删除小组</h3>
+            <p className="mt-3 text-sm leading-6 text-gray-600">
+              将删除“{selectedYear?.name} · {selectedProject?.name}”下当前显示的 <strong className="text-red-600">{groups.length}</strong> 个小组。
+            </p>
+            <div className="mt-3 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm leading-6 text-red-700">
+              小组积分将一并删除；学员账号和个人积分会保留，所有成员将变为未分组。此操作不可撤销。
+            </div>
+            <div className="flex gap-3 mt-6">
+              <button disabled={bulkDeleting} onClick={() => setBulkDeleteConfirm(false)} className="flex-1 py-2.5 text-sm font-medium border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50">取消</button>
+              <button disabled={bulkDeleting} onClick={handleBatchDelete} className="flex-1 py-2.5 text-sm font-medium bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:cursor-wait disabled:opacity-60">
+                {bulkDeleting ? '正在删除...' : `确认删除 ${groups.length} 个小组`}
+              </button>
             </div>
           </div>
         </div>
