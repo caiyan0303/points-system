@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import api from '../../api'
 import AppLayout from '../../components/AppLayout'
 import Toast from '../../components/Toast'
-import { Plus, X, Edit, Package, Clock, Power, Upload, Loader2 } from 'lucide-react'
+import { Plus, X, Edit, Package, Power, Upload, Loader2, CalendarDays, Eye } from 'lucide-react'
 
 const PRODUCT_STATUS = {
   '可兑换': 'bg-green-50 text-green-600',
@@ -21,6 +21,38 @@ const STATUS_LABEL = {
   '补货中': '补货中',
 }
 const isProductListed = product => ['可兑换', '即将售罄'].includes(product.product_status)
+
+const parseDate = value => {
+  if (!value) return null
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
+const formatDateTime = (value, emptyText) => {
+  const date = parseDate(value)
+  return date ? date.toLocaleString('zh-CN', {
+    year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false,
+  }) : emptyText
+}
+
+const toDateTimeInput = value => {
+  const date = parseDate(value)
+  if (!date) return ''
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000)
+  return local.toISOString().slice(0, 16)
+}
+
+const toApiDateTime = value => value ? new Date(value).toISOString() : null
+
+const getVisibility = product => {
+  if (!isProductListed(product)) return { label: '学员端不可见', className: 'bg-slate-100 text-slate-500' }
+  const now = Date.now()
+  const startsAt = parseDate(product.on_sale_time)?.getTime()
+  const endsAt = parseDate(product.off_sale_time)?.getTime()
+  if (startsAt && startsAt > now) return { label: '等待上架时间', className: 'bg-amber-50 text-amber-600' }
+  if (endsAt && endsAt < now) return { label: '已过下架时间', className: 'bg-rose-50 text-rose-600' }
+  return { label: '学员端可见', className: 'bg-emerald-50 text-emerald-600' }
+}
 
 export default function AdminProducts() {
   const [products, setProducts] = useState([])
@@ -57,7 +89,9 @@ export default function AdminProducts() {
       id: p.id, name: p.name, description: p.description || '', image_url: p.image_url || '',
       points_required: p.points_required, total_stock: p.total_stock,
       limit_per_person: p.limit_per_person || '',
-      is_limited: !!p.limit_per_person, on_sale_time: p.on_sale_time || '', off_sale_time: p.off_sale_time || ''
+      is_limited: !!p.limit_per_person,
+      on_sale_time: toDateTimeInput(p.on_sale_time),
+      off_sale_time: toDateTimeInput(p.off_sale_time)
     })
   }
 
@@ -70,6 +104,9 @@ export default function AdminProducts() {
       if (!Number.isInteger(pointsRequired) || pointsRequired <= 0) return showToast('所需积分必须为正整数', 'error')
       if (!Number.isInteger(totalStock) || totalStock < 0) return showToast('总库存不能小于 0', 'error')
       if (form.is_limited && (!Number.isInteger(limitPerPerson) || limitPerPerson <= 0)) return showToast('请输入有效的限兑次数', 'error')
+      if (form.on_sale_time && form.off_sale_time && new Date(form.on_sale_time) >= new Date(form.off_sale_time)) {
+        return showToast('下架时间必须晚于上架时间', 'error')
+      }
 
       const payload = {
         name: form.name.trim(),
@@ -80,8 +117,8 @@ export default function AdminProducts() {
         on_site_stock: 0,
         limit_per_person: limitPerPerson,
         is_limited: form.is_limited ? 1 : 0,
-        on_sale_time: form.on_sale_time || null,
-        off_sale_time: form.off_sale_time || null,
+        on_sale_time: toApiDateTime(form.on_sale_time),
+        off_sale_time: toApiDateTime(form.off_sale_time),
       }
       if (modal === 'create') {
         await api.post('/api/admin/products', payload)
@@ -150,64 +187,32 @@ export default function AdminProducts() {
       ) : products.length === 0 ? (
         <div className="flex items-center justify-center h-48 text-gray-400">暂无商品</div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {products.map((p) => (
-            <div key={p.id} className="bg-white rounded-xl border border-gray-200 overflow-hidden hover:shadow-md transition-shadow">
-              <div className="h-40 bg-gray-50 flex items-center justify-center overflow-hidden">
-                {p.image_url ? (
-                  <img src={p.image_url} alt={p.name} className="w-full h-full object-cover" />
-                ) : (
-                  <Package className="w-12 h-12 text-gray-300" />
-                )}
-              </div>
-              <div className="p-4">
-                <div className="flex items-center justify-between mb-2">
-                  <span className={`text-xs px-2 py-0.5 rounded-full ${PRODUCT_STATUS[p.product_status] || 'bg-gray-100 text-gray-500'}`}>
-                    {STATUS_LABEL[p.product_status] || p.product_status}
-                  </span>
-                </div>
-                <h3 className="font-semibold text-gray-900 text-sm mb-3">{p.name}</h3>
-                {!isProductListed(p) && (
-                  <div className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
-                    当前商品未上架，学员端不可见
-                  </div>
-                )}
-                <div className="space-y-1 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-gray-500">所需积分</span>
-                  <span className="font-semibold text-indigo-600">{p.points_required}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-500">库存</span>
-                  <span className="text-gray-700">
-                    <span className="text-gray-900 font-medium">{p.available_stock ?? (p.total_stock - (p.locked_stock || 0))}</span>
-                    <span className="text-xs text-gray-400 ml-1">/ {p.total_stock}</span>
-                  </span>
-                </div>
-                {p.limit_per_person && (
-                  <div className="flex justify-between">
-                    <span className="text-gray-500">限兑</span>
-                    <span className="text-gray-700">每人 {p.limit_per_person} 次</span>
-                  </div>
-                )}
-                <div className="flex justify-between text-xs text-gray-400 pt-1">
-                  <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> {p.on_sale_time || '-'} ~ {p.off_sale_time || '-'}</span>
-                </div>
-              </div>
-              <div className="mt-3 pt-3 border-t border-gray-100 flex items-center justify-end gap-2">
-                <button onClick={() => openEdit(p)} className="px-3 py-1.5 text-xs bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100">
-                  <Edit className="w-3 h-3" />
-                </button>
-                <button onClick={() => toggleStatus(p)} title={isProductListed(p) ? '下架商品' : '上架商品'} className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg ${
-                  isProductListed(p) ? 'bg-red-50 text-red-500 hover:bg-red-100' : 'bg-green-50 text-green-600 hover:bg-green-100'
-                }`}>
-                  <Power className="w-3.5 h-3.5" />
-                  {isProductListed(p) ? '下架商品' : '上架商品'}
-                </button>
-              </div>
-              </div>
-            </div>
-          ))}
+        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="flex items-center gap-2 border-b border-indigo-100 bg-gradient-to-r from-indigo-50 via-white to-cyan-50 px-5 py-3 text-xs text-slate-500">
+            <Eye className="h-4 w-4 text-indigo-500" />只有状态为“可兑换/即将售罄”，且当前时间在上架与下架时间范围内的商品，才会在学员端显示。
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[1120px]">
+              <thead className="bg-slate-50 text-left text-xs font-bold text-slate-500">
+                <tr><th className="px-5 py-3">商品</th><th className="px-4 py-3">状态</th><th className="px-4 py-3 text-right">所需积分</th><th className="px-4 py-3">库存</th><th className="px-4 py-3">限兑</th><th className="px-4 py-3">上架时间</th><th className="px-4 py-3">下架时间</th><th className="px-5 py-3 text-right">操作</th></tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {products.map((p) => {
+                  const visibility = getVisibility(p)
+                  return <tr key={p.id} className="transition hover:bg-indigo-50/30">
+                    <td className="px-5 py-4"><div className="flex items-center gap-3"><div className="flex h-16 w-20 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-slate-100">{p.image_url ? <img src={p.image_url} alt={p.name} className="h-full w-full object-cover" /> : <Package className="h-7 w-7 text-slate-300" />}</div><div className="min-w-0"><p className="max-w-56 truncate text-sm font-bold text-slate-900">{p.name}</p><p className="mt-1 max-w-56 truncate text-xs text-slate-400">{p.description || '暂无商品描述'}</p></div></div></td>
+                    <td className="px-4 py-4"><div className="space-y-1.5"><span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold ${PRODUCT_STATUS[p.product_status] || 'bg-gray-100 text-gray-500'}`}>{STATUS_LABEL[p.product_status] || p.product_status}</span><br /><span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-bold ${visibility.className}`}>{visibility.label}</span></div></td>
+                    <td className="px-4 py-4 text-right text-lg font-black text-indigo-600">{p.points_required}</td>
+                    <td className="px-4 py-4 text-sm text-slate-700"><strong>{p.available_stock ?? (p.total_stock - (p.locked_stock || 0))}</strong><span className="text-slate-400"> / {p.total_stock}</span><p className="mt-1 text-[11px] text-slate-400">可用 / 总库存</p></td>
+                    <td className="px-4 py-4 text-sm text-slate-600">{p.limit_per_person ? `每人 ${p.limit_per_person} 次` : '不限次数'}</td>
+                    <td className="px-4 py-4 text-sm text-slate-600"><span className="flex items-center gap-1.5"><CalendarDays className="h-4 w-4 text-indigo-400" />{formatDateTime(p.on_sale_time, '立即上架')}</span></td>
+                    <td className="px-4 py-4 text-sm text-slate-600"><span className="flex items-center gap-1.5"><CalendarDays className="h-4 w-4 text-violet-400" />{formatDateTime(p.off_sale_time, '长期有效')}</span></td>
+                    <td className="px-5 py-4"><div className="flex justify-end gap-2"><button onClick={() => openEdit(p)} title="编辑商品" className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100"><Edit className="h-4 w-4" /></button><button onClick={() => toggleStatus(p)} title={isProductListed(p) ? '下架商品' : '上架商品'} className={`inline-flex h-9 items-center gap-1.5 rounded-lg px-3 text-xs font-bold ${isProductListed(p) ? 'bg-red-50 text-red-500 hover:bg-red-100' : 'bg-green-50 text-green-600 hover:bg-green-100'}`}><Power className="h-4 w-4" />{isProductListed(p) ? '下架' : '上架'}</button></div></td>
+                  </tr>
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
@@ -268,10 +273,12 @@ export default function AdminProducts() {
                 <div>
                   <label className="block text-sm text-gray-600 mb-1">上架时间</label>
                   <input type="datetime-local" value={form.on_sale_time} onChange={(e) => setForm({...form, on_sale_time: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500" />
+                  <p className="mt-1 text-xs text-gray-400">留空表示上架后立即展示</p>
                 </div>
                 <div>
                   <label className="block text-sm text-gray-600 mb-1">下架时间</label>
-                  <input type="datetime-local" value={form.off_sale_time} onChange={(e) => setForm({...form, off_sale_time: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500" />
+                  <input type="datetime-local" min={form.on_sale_time || undefined} value={form.off_sale_time} onChange={(e) => setForm({...form, off_sale_time: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500" />
+                  <p className="mt-1 text-xs text-gray-400">留空表示长期有效</p>
                 </div>
               </div>
             </div>

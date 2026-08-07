@@ -1,0 +1,14 @@
+.git/
+.tmp/
+.tmp-*/
+.artifact-template/
+.env
+.env.*
+!.env.example
+*.lnk
+backend/.venv/
+backend/__pycache__/
+backend/backups/
+backend/uploads/
+frontend/node_modules/
+frontend/dist/

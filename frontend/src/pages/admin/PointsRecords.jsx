@@ -8,8 +8,8 @@ import { useAdminScope } from '../../contexts/AdminScopeContext'
 import { Search, RefreshCw, Download, Eye, X, Trash2 } from 'lucide-react'
 
 const CATEGORIES = [
-  '线上学习', '学习输出', '问卷及测评反馈', '线下出勤',
-  '课堂互动', '结营任务', '小组长职责', '特殊调整'
+  '问卷及测评反馈', '个人全勤', '考核优秀奖励', '学习输出',
+  '课堂互动', '特殊调整'
 ]
 
 const SOURCE_BADGES = {

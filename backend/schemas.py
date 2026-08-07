@@ -1,5 +1,5 @@
 """优才计划积分管理平台 — Pydantic Schemas"""
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from typing import Optional, List, Any
 from datetime import datetime
 
@@ -179,11 +179,20 @@ class ExcellentSelect(BaseModel):
 # ═══════ 积分 ═══════
 class PointCreate(BaseModel):
     record_number: Optional[str] = None
+    source_row: Optional[int] = None
     student_id: int; points: int
     year_id: int; project_id: int
     phase_id: Optional[int] = None; group_id: Optional[int] = None
     category: str = "特殊调整"; description: Optional[str] = None
     obtained_date: Optional[datetime] = None
+
+    @field_validator("record_number", mode="before")
+    @classmethod
+    def normalize_record_number(cls, value):
+        if value is None:
+            return None
+        normalized = str(value).strip()
+        return normalized or None
 
 class PointBatchCreate(BaseModel):
     records: List[PointCreate]
@@ -321,6 +330,7 @@ class AdminDashboardStats(BaseModel):
     phase_overview: List[dict] = []
 
 class StudentDashboardStats(BaseModel):
+    year_id: Optional[int] = None; project_id: Optional[int] = None
     real_name: str = ""; year_name: str = ""; project_name: str = ""
     group_name: str = ""
     period_points: int = 0; period_rank: Optional[int] = None

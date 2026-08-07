@@ -8,9 +8,16 @@ import { Plus, Upload, X, Trash2, Download, MessageCircle, Send, CheckCircle2, L
 import * as XLSX from 'xlsx'
 
 const CATEGORIES = [
-  '线上学习', '学习输出', '问卷及测评反馈', '线下出勤',
-  '课堂互动', '结营任务', '小组长职责', '特殊调整'
+  '问卷及测评反馈', '个人全勤', '考核优秀奖励', '学习输出',
+  '课堂互动', '特殊调整'
 ]
+
+const importErrorMessage = (error, fallback = '导入失败') => {
+  const detail = error.response?.data?.detail
+  if (typeof detail === 'string') return detail
+  if (Array.isArray(detail)) return detail.map(item => item.msg || JSON.stringify(item)).join('；')
+  return error.message || fallback
+}
 
 const beijingToday = () => new Intl.DateTimeFormat('en-CA', {
   timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit',
@@ -35,7 +42,7 @@ export default function AdminPointsAdd() {
   // Single entry
   const [singleForm, setSingleForm] = useState({
     student_id: '', year_id: '', project_id: '', group_id: '', phase_id: '',
-    points: '', category: '线上学习', item_name: '', description: '', source_note: '', obtained_date: beijingToday()
+    points: '', category: '问卷及测评反馈', item_name: '', description: '', source_note: '', obtained_date: beijingToday()
   })
   const [smartText, setSmartText] = useState('')
   const [smartPreview, setSmartPreview] = useState(null)
@@ -43,7 +50,7 @@ export default function AdminPointsAdd() {
   const [submitting, setSubmitting] = useState(false)
 
   // Batch entry
-  const [batchRows, setBatchRows] = useState([{ student_id: '', year_id: '', project_id: '', phase_id: '', points: '', category: '线上学习', description: '', obtained_date: beijingToday(), group_id: '' }])
+  const [batchRows, setBatchRows] = useState([{ student_id: '', year_id: '', project_id: '', phase_id: '', points: '', category: '问卷及测评反馈', description: '', obtained_date: beijingToday(), group_id: '' }])
 
   // Excel import
   const [importFile, setImportFile] = useState(null)
@@ -53,21 +60,26 @@ export default function AdminPointsAdd() {
   const showToast = (msg, type = 'success') => { setToast({ msg, type }); setTimeout(() => setToast(null), 3000) }
 
   useEffect(() => {
+    api.get('/api/common/years').then(({ data }) => setYears(data.items || data))
+    api.get('/api/common/projects').then(({ data }) => setProjects(data.items || data))
+    api.get('/api/admin/groups').then(({ data }) => setGroups(data.items || data))
+  }, [])
+
+  useEffect(() => {
     const loadStudents = async () => {
-      const { data: firstPage } = await api.get('/api/admin/students', { params: { page: 1, page_size: 100 } })
+      if (!scopeYearId || !scopeProjectId) return setStudents([])
+      const scopeParams = { year_id: scopeYearId, project_id: scopeProjectId, page_size: 100 }
+      const { data: firstPage } = await api.get('/api/admin/students', { params: { ...scopeParams, page: 1 } })
       if (!firstPage.items || firstPage.total_pages <= 1) return setStudents(firstPage.items || firstPage)
       const remainingPages = await Promise.all(
         Array.from({ length: firstPage.total_pages - 1 }, (_, index) => (
-          api.get('/api/admin/students', { params: { page: index + 2, page_size: 100 } })
+          api.get('/api/admin/students', { params: { ...scopeParams, page: index + 2 } })
         ))
       )
       setStudents([firstPage, ...remainingPages.map(response => response.data)].flatMap(page => page.items || page))
     }
     loadStudents().catch(() => showToast('学员数据加载失败', 'error'))
-    api.get('/api/common/years').then(({ data }) => setYears(data.items || data))
-    api.get('/api/common/projects').then(({ data }) => setProjects(data.items || data))
-    api.get('/api/admin/groups').then(({ data }) => setGroups(data.items || data))
-  }, [])
+  }, [scopeYearId, scopeProjectId])
 
   useEffect(() => {
     setSingleForm(current => ({ ...current, year_id: scopeYearId, project_id: scopeProjectId, phase_id: '', group_id: '', student_id: '' }))
@@ -102,7 +114,7 @@ export default function AdminPointsAdd() {
       if (singleForm.group_id) payload.group_id = parseInt(singleForm.group_id)
       await api.post('/api/admin/points', payload)
       showToast(`${singleForm.points} 积分已录入`)
-      setSingleForm({ student_id: '', year_id: '', project_id: '', group_id: '', phase_id: '', points: '', category: '线上学习', item_name: '', description: '', source_note: '', obtained_date: beijingToday() })
+      setSingleForm({ student_id: '', year_id: '', project_id: '', group_id: '', phase_id: '', points: '', category: '问卷及测评反馈', item_name: '', description: '', source_note: '', obtained_date: beijingToday() })
     } catch (err) { showToast(err.response?.data?.detail || '录入失败', 'error') }
     finally { setSubmitting(false) }
   }
@@ -258,7 +270,7 @@ export default function AdminPointsAdd() {
       const succeeded = results.filter(r => r.status === 'fulfilled').length
       const failed = results.filter(r => r.status === 'rejected').length
       showToast(`成功录入 ${succeeded} 条${failed > 0 ? `，${failed} 条失败` : ''}`, failed > 0 ? 'error' : 'success')
-      setBatchRows([{ student_id: '', year_id: '', project_id: '', phase_id: '', points: '', category: '线上学习', description: '', obtained_date: beijingToday(), group_id: '' }])
+      setBatchRows([{ student_id: '', year_id: '', project_id: '', phase_id: '', points: '', category: '问卷及测评反馈', description: '', obtained_date: beijingToday(), group_id: '' }])
     } catch (err) { showToast('批量录入失败', 'error') }
     finally { setSubmitting(false) }
   }
@@ -266,8 +278,8 @@ export default function AdminPointsAdd() {
   // 下载积分导入模板
   const downloadPointsTemplate = () => {
     const link = document.createElement('a')
-    link.href = '/templates/优才计划积分批量导入模板_可打开版.xlsx'
-    link.download = '优才计划积分批量导入模板_可打开版.xlsx'
+    link.href = '/templates/个人记录录入.xlsx'
+    link.download = '个人记录录入.xlsx'
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
@@ -282,8 +294,12 @@ export default function AdminPointsAdd() {
       if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
         const buf = await file.arrayBuffer()
         const wb = XLSX.read(buf, { type: 'array' })
-        const ws = wb.Sheets['积分导入明细'] || wb.Sheets[wb.SheetNames[0]]
-        data = XLSX.utils.sheet_to_json(ws, { defval: '' })
+        const ws = wb.Sheets['个人记录录入'] || wb.Sheets['个人积分录入'] || wb.Sheets['积分导入明细'] || wb.Sheets[wb.SheetNames[0]]
+        const matrix = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: true })
+        const headerRow = matrix.findIndex(row => row.some(value => String(value).trim() === '姓名') && row.some(value => String(value).trim() === '积分类别'))
+        if (headerRow < 0) throw new Error('未找到“姓名、积分类别”表头，请使用最新版模板')
+        data = XLSX.utils.sheet_to_json(ws, { range: headerRow, defval: '', raw: true })
+        data._rowOffset = headerRow + 2
       } else if (file.name.endsWith('.json')) {
         const text = await file.text()
         data = JSON.parse(text)
@@ -325,6 +341,24 @@ export default function AdminPointsAdd() {
         || (phase.start_date?.slice(0, 10) <= today && phase.end_date?.slice(0, 10) >= today)
       )
 
+      const rowOffset = data._rowOffset || 2
+      const phaseToken = value => clean(value).replace(/\s+/g, '').replace(/^阶段([一二三四五六七八九十百0-9]+)$/, '第$1阶段')
+      const samePhase = (systemValue, inputValue) => {
+        const system = phaseToken(systemValue)
+        const input = phaseToken(inputValue)
+        if (!input) return false
+        const systemShort = system.match(/第[一二三四五六七八九十百0-9]+阶段/)?.[0]
+        const inputShort = input.match(/第[一二三四五六七八九十百0-9]+阶段/)?.[0]
+        return system === input || (systemShort && inputShort && systemShort === inputShort)
+      }
+      const phaseAtDate = (project, obtainedDate) => {
+        if (!project || !obtainedDate) return null
+        const matches = phases.filter(item => String(item.project_id) === String(project.id)
+          && (!item.start_date || item.start_date.slice(0, 10) <= obtainedDate)
+          && (!item.end_date || item.end_date.slice(0, 10) >= obtainedDate))
+        return matches.length === 1 ? matches[0] : null
+      }
+
       const mapped = data.map((source, index) => {
         const row = normalizeRow(source)
         const studentName = clean(getValue(row, '姓名', '学员姓名', 'student_name', 'real_name'))
@@ -343,7 +377,7 @@ export default function AdminPointsAdd() {
           ? years.find(item => String(item.id) === String(requestedYearId))
           : yearName
             ? years.find(item => clean(item.name).replace(/年度$/, '') === yearName.replace(/年度$/, ''))
-            : years.find(item => String(item.id) === String(student?.year_id))
+            : years.find(item => String(item.id) === String(scopeYearId || student?.year_id))
 
         const projectName = clean(getValue(row, '培训项目', '项目名称', 'project_name'))
         const requestedProjectId = parseInt(getValue(row, '项目ID', 'project_id'))
@@ -351,59 +385,50 @@ export default function AdminPointsAdd() {
           ? projects.find(item => String(item.id) === String(requestedProjectId))
           : projectName
             ? projects.find(item => clean(item.name) === projectName && (!year || String(item.year_id) === String(year.id)))
-            : projects.find(item => String(item.id) === String(student?.project_id) && isCurrentProject(item))
+            : projects.find(item => String(item.id) === String(scopeProjectId || student?.project_id))
         if (!year && project) year = years.find(item => String(item.id) === String(project.year_id))
 
-        const phaseName = clean(getValue(row, '培训阶段', '阶段名称', 'phase_name'))
+        const rawObtainedDate = getValue(row, '获得日期', '日期', 'obtained_date')
+        const obtainedDate = formatDate(rawObtainedDate) || today
+        const phaseName = clean(getValue(row, '阶段（自动）', '阶段(自动)', '培训阶段', '阶段名称', '阶段', 'phase_name'))
         const requestedPhaseId = parseInt(getValue(row, '阶段ID', 'phase_id'))
         let phase = Number.isInteger(requestedPhaseId)
           ? phases.find(item => String(item.id) === String(requestedPhaseId))
           : phaseName
             ? phases.find(item => {
-              const systemName = clean(item.name)
-              const shortName = systemName.match(/第[一二三四五六七八九十百0-9]+阶段/)?.[0]
-              return (systemName === phaseName || shortName === phaseName) && (!project || String(item.project_id) === String(project.id))
+              return samePhase(item.name, phaseName) && (!project || String(item.project_id) === String(project.id))
             })
             : null
+        if (!phase) phase = phaseAtDate(project, obtainedDate)
         if (!phase && !phaseName && project) {
           const currentPhases = phases.filter(item => String(item.project_id) === String(project.id) && isCurrentPhase(item))
           if (currentPhases.length === 1) phase = currentPhases[0]
         }
 
-        const groupName = clean(getValue(row, '所属小组', '小组名称', 'group_name'))
-        const requestedGroupId = parseInt(getValue(row, '小组ID', 'group_id'))
-        const group = Number.isInteger(requestedGroupId)
-          ? groups.find(item => String(item.id) === String(requestedGroupId))
-          : groups.find(item => clean(item.name) === (groupName || clean(student?.group_name)) && (!project || String(item.project_id) === String(project.id)))
+        const groupName = clean(getValue(row, '所属小组（自动）', '所属小组(自动)', '所属小组', '小组名称', 'group_name'))
+        const studentGroupName = clean(student?.group_name)
+        const group = groups.find(item => clean(item.name) === studentGroupName && (!project || String(item.project_id) === String(project.id)))
 
         const recordNumber = clean(getValue(row, '记录编号', 'record_number'))
         const points = Number(getValue(row, '积分值', '积分数值', '积分', 'points'))
         const pointCategory = clean(getValue(row, '积分类别', '积分分类', 'category'))
-        const item = clean(getValue(row, '积分事项', 'description'))
+        const item = clean(getValue(row, '积分事项', 'description')) || pointCategory
         const taskName = clean(getValue(row, '任务名称', 'task_name'))
         const completionLevel = clean(getValue(row, '完成档位', 'completion_level'))
         const dataSource = clean(getValue(row, '数据来源', 'source'))
         const evidence = clean(getValue(row, '证明材料/链接', '证明材料', 'evidence'))
         const note = clean(getValue(row, '备注', 'note'))
-        const obtainedDate = formatDate(getValue(row, '获得日期', '日期', 'obtained_date'))
         const errors = []
-        if (!recordNumber) errors.push('缺少记录编号')
         if (!studentName) errors.push('缺少姓名')
-        if (!studentEmail) errors.push('缺少邮箱')
         if (!student) errors.push('未匹配到学员')
-        if (student && studentName && clean(student.real_name) !== studentName) errors.push('姓名与邮箱对应的学员不一致')
-        if (student?.year_id && year && student.year_id !== year.id) errors.push('填写年度与学员所属年度不一致')
-        if (student?.project_id && project && student.project_id !== project.id) errors.push('填写项目与学员所属项目不一致')
         if (!year) errors.push('未匹配到年度')
-        if (!project) errors.push('未识别到学员当前进行中的培训项目')
-        if (!phase) errors.push('未识别到项目当前进行中的唯一阶段')
+        if (!project) errors.push('未匹配到当前筛选的培训项目')
+        if (!phase) errors.push('未根据阶段名称或日期匹配到当前项目阶段')
         if (!Number.isFinite(points) || points === 0) errors.push('积分数值无效')
         if (!pointCategory || !CATEGORIES.includes(pointCategory)) errors.push('积分类别不在模板标准选项中')
-        if (!item) errors.push('缺少积分事项')
-        if (!taskName) errors.push('缺少任务名称')
-        if (!dataSource) errors.push('缺少数据来源')
         if (!/^\d{4}-\d{2}-\d{2}$/.test(obtainedDate)) errors.push('获得日期格式应为 YYYY-MM-DD')
-        if (groupName && !group) errors.push('未匹配到所属小组')
+        if (groupName && studentGroupName && groupName !== studentGroupName) errors.push(`填写小组与学员所属小组“${studentGroupName}”不一致`)
+        if (student && !group) errors.push('未找到该学员在当前项目中的所属小组')
 
         return {
           record_number: recordNumber,
@@ -416,7 +441,7 @@ export default function AdminPointsAdd() {
           points,
           category: pointCategory,
           item_name: item,
-          task_key: taskName || item,
+          task_key: taskName || `${item}-${obtainedDate}`,
           data_source: dataSource || 'Excel导入',
           source_note: evidence,
           description: [
@@ -424,10 +449,11 @@ export default function AdminPointsAdd() {
             note && `备注：${note}`,
           ].filter(Boolean).join('；'),
           obtained_date: obtainedDate,
-          _row: index + 2,
+          _hasData: Boolean(studentName || phaseName || pointCategory || clean(getValue(row, '积分值', '积分数值', '积分', 'points'))),
+          _row: index + rowOffset,
           _errors: errors,
         }
-      })
+      }).filter(row => row._hasData)
       const recordNumberCounts = mapped.reduce((counts, row) => {
         if (row.record_number) counts[row.record_number] = (counts[row.record_number] || 0) + 1
         return counts
@@ -455,10 +481,11 @@ export default function AdminPointsAdd() {
     try {
       const records = importPreview.map(r => {
         const record = {
-          record_number: r.record_number,
+          record_number: r.record_number || null,
+          source_row: r._row,
           student_id: parseInt(r.student_id),
           points: parseInt(r.points),
-          category: r.category || '线上学习',
+          category: r.category || '问卷及测评反馈',
           item_name: r.item_name || r.description || r.category || '积分任务',
           task_key: r.task_key || r.item_name || r.description || r.category || '积分任务',
           description: r.description || '',
@@ -478,7 +505,7 @@ export default function AdminPointsAdd() {
       setImportFile(null)
       setImportPreview(null)
       setImportStats(null)
-    } catch (err) { showToast(err.response?.data?.detail || '导入失败', 'error') }
+    } catch (err) { showToast(importErrorMessage(err), 'error') }
     finally { setSubmitting(false) }
   }
 
@@ -503,7 +530,7 @@ export default function AdminPointsAdd() {
           {[
             { key: 'single', label: '对话录入' },
             { key: 'batch', label: '批量录入' },
-            { key: 'import', label: 'Excel导入' },
+            { key: 'import', label: '个人记录录入' },
           ].map(t => (
             <button
               key={t.key}
@@ -525,7 +552,7 @@ export default function AdminPointsAdd() {
                 </div>
                 <div className="rounded-2xl rounded-tl-sm bg-gray-100 px-4 py-3 text-sm text-gray-700">
                   告诉我要给谁、哪类积分以及加减多少分，例如：<br />
-                  <span className="font-medium text-indigo-700">张三线上学习+5分</span>
+                  <span className="font-medium text-indigo-700">张三课堂互动+3分</span>
                   <span className="mt-1 block text-xs text-gray-500">系统会根据学员归属和今天的日期自动识别年度、项目与当前阶段。</span>
                 </div>
               </div>
@@ -723,7 +750,7 @@ export default function AdminPointsAdd() {
               </table>
             </div>
             <div className="flex gap-3 mt-4">
-              <button onClick={() => setBatchRows([...batchRows, { student_id: '', year_id: '', project_id: '', phase_id: '', points: '', category: '线上学习', description: '', obtained_date: beijingToday(), group_id: '' }])} className="px-4 py-2 text-sm border border-dashed border-gray-300 text-gray-500 rounded-lg hover:bg-gray-50">
+              <button onClick={() => setBatchRows([...batchRows, { student_id: '', year_id: '', project_id: '', phase_id: '', points: '', category: '问卷及测评反馈', description: '', obtained_date: beijingToday(), group_id: '' }])} className="px-4 py-2 text-sm border border-dashed border-gray-300 text-gray-500 rounded-lg hover:bg-gray-50">
                 <Plus className="w-4 h-4 inline mr-1" /> 添加行
               </button>
               <button onClick={handleBatchSubmit} disabled={submitting} className="px-6 py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50">
@@ -748,7 +775,7 @@ export default function AdminPointsAdd() {
               <input id="points-file-input" type="file" accept=".json,.csv,.xlsx,.xls" onChange={handleFileUpload} className="hidden" />
               {importFile && <p className="text-xs text-green-600 mt-2">已选择: {importFile.name}</p>}
             </div>
-            <button onClick={downloadPointsTemplate} className="mb-4 flex items-center gap-1 mx-auto px-4 py-2 text-sm border border-dashed border-indigo-300 text-indigo-600 rounded-lg hover:bg-indigo-50"><Download className="w-4 h-4" /> 下载积分导入模版（Excel）</button>
+            <button onClick={downloadPointsTemplate} className="mb-4 flex items-center gap-1 mx-auto px-4 py-2 text-sm border border-dashed border-indigo-300 text-indigo-600 rounded-lg hover:bg-indigo-50"><Download className="w-4 h-4" /> 下载个人记录录入模板</button>
             {importStats && (
               <div className="mb-4">
                 <div className="flex items-center gap-4 text-sm mb-3">

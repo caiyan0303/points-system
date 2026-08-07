@@ -7,8 +7,14 @@ import Toast from '../../components/Toast'
 import PointsPageTabs from '../../components/PointsPageTabs'
 import { useAdminScope } from '../../contexts/AdminScopeContext'
 
-const CATEGORIES = ['线上案例沟通', '线上案例输出', '阶段案例评优', '沙盘共创', '特殊调整']
+const CATEGORIES = ['小组出勤', '线上学习任务', '线上案例任务', '阶段案例评优', '沙盘共创', '结营作业', '特殊调整']
 const DATA_SOURCES = ['Excel导入', '系统自动', '人工核验', '问卷星', '现场记录', '其他']
+const importErrorMessage = (error, fallback = '批量导入失败') => {
+  const detail = error.response?.data?.detail
+  if (typeof detail === 'string') return detail
+  if (Array.isArray(detail)) return detail.map(item => item.msg || JSON.stringify(item)).join('；')
+  return error.message || fallback
+}
 const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
 const textValue = value => String(value ?? '').trim()
 const excelDate = value => {
@@ -31,7 +37,7 @@ export default function AdminTeamPoints() {
   const [submitting, setSubmitting] = useState(false)
   const [importing, setImporting] = useState(false)
   const [importPreview, setImportPreview] = useState(null)
-  const [form, setForm] = useState({ year_id: '', project_id: '', phase_id: '', group_id: '', category: '线上案例沟通', item_name: '', points: '', obtained_date: today(), data_source: '单个录入', source_note: '', remark: '' })
+  const [form, setForm] = useState({ year_id: '', project_id: '', phase_id: '', group_id: '', category: '小组出勤', item_name: '', points: '', obtained_date: today(), data_source: '单个录入', source_note: '', remark: '' })
   const showToast = (msg, type = 'success') => { setToast({ msg, type }); setTimeout(() => setToast(null), 3000) }
 
   const visibleProjects = useMemo(() => form.year_id ? projects.filter(item => String(item.year_id) === String(form.year_id)) : projects, [form.year_id, projects])
@@ -68,8 +74,8 @@ export default function AdminTeamPoints() {
 
   const downloadTemplate = () => {
     const link = document.createElement('a')
-    link.href = '/templates/优才计划团队积分批量导入模板.xlsx'
-    link.download = '优才计划小组积分批量导入模板.xlsx'
+    link.href = '/templates/小组积分录入.xlsx'
+    link.download = '小组积分录入.xlsx'
     document.body.appendChild(link)
     link.click()
     link.remove()
@@ -81,25 +87,41 @@ export default function AdminTeamPoints() {
     if (!file) return
     try {
       const workbook = XLSX.read(await file.arrayBuffer(), { cellDates: false })
-      const sheet = workbook.Sheets['小组积分导入'] || workbook.Sheets['团队积分导入'] || workbook.Sheets[workbook.SheetNames[0]]
-      const sourceRows = XLSX.utils.sheet_to_json(sheet, { defval: '', raw: true })
+      const sheet = workbook.Sheets['小组积分录入'] || workbook.Sheets['团队积分录入'] || workbook.Sheets['小组积分导入'] || workbook.Sheets['团队积分导入'] || workbook.Sheets[workbook.SheetNames[0]]
+      const matrix = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: true })
+      const headerRow = matrix.findIndex(row => row.some(value => String(value).trim() === '小组') && row.some(value => String(value).trim() === '积分类别'))
+      if (headerRow < 0) throw new Error('未找到“小组、积分类别”表头，请使用最新版模板')
+      const sourceRows = XLSX.utils.sheet_to_json(sheet, { range: headerRow, defval: '', raw: true })
       const valid = []
       const errors = []
       sourceRows.forEach((row, index) => {
-        const rowNumber = index + 2
+        const rowNumber = index + headerRow + 2
         const yearName = textValue(row['所属年度'] ?? row['年度'])
         const projectName = textValue(row['培训项目'] ?? row['项目名称'])
-        const phaseName = textValue(row['所属阶段'] ?? row['阶段'])
+        const phaseName = textValue(row['阶段（自动）'] ?? row['阶段(自动)'] ?? row['所属阶段'] ?? row['阶段'])
         const groupName = textValue(row['小组名称'] ?? row['计分小组'] ?? row['小组'])
         const category = textValue(row['积分类别'])
-        const itemName = textValue(row['积分事项'])
-        const rawPoints = row['积分值'] ?? row['小组积分'] ?? row['团队积分']
+        const itemName = textValue(row['积分事项']) || category
+        const rawPoints = row['积分'] ?? row['积分值'] ?? row['小组积分'] ?? row['团队积分']
         const points = Number(rawPoints)
-        const obtainedDate = excelDate(row['获得日期'] ?? row['获得时间'])
+        const obtainedDate = excelDate(row['日期'] ?? row['获得日期'] ?? row['获得时间']) || today()
         if (![yearName, projectName, phaseName, groupName, category, itemName, textValue(rawPoints)].some(Boolean)) return
-        const year = years.find(item => textValue(item.name) === yearName)
-        const project = projects.find(item => textValue(item.name) === projectName && (!year || String(item.year_id) === String(year.id)))
-        const phase = phases.find(item => textValue(item.name) === phaseName && (!project || String(item.project_id) === String(project.id)))
+        const year = years.find(item => String(item.id) === String(scopeYearId)) || years.find(item => textValue(item.name) === yearName)
+        const project = projects.find(item => String(item.id) === String(scopeProjectId)) || projects.find(item => textValue(item.name) === projectName && (!year || String(item.year_id) === String(year.id)))
+        const normalizePhase = value => textValue(value).replace(/\s+/g, '').replace(/^阶段([一二三四五六七八九十百0-9]+)$/, '第$1阶段')
+        const inputPhase = normalizePhase(phaseName)
+        let phase = phases.find(item => {
+          const systemName = normalizePhase(item.name)
+          const systemShort = systemName.match(/第[一二三四五六七八九十百0-9]+阶段/)?.[0]
+          const inputShort = inputPhase.match(/第[一二三四五六七八九十百0-9]+阶段/)?.[0]
+          return (systemName === inputPhase || (systemShort && inputShort && systemShort === inputShort)) && (!project || String(item.project_id) === String(project.id))
+        })
+        if (!phase && project && obtainedDate) {
+          const matches = phases.filter(item => String(item.project_id) === String(project.id)
+            && (!item.start_date || item.start_date.slice(0, 10) <= obtainedDate)
+            && (!item.end_date || item.end_date.slice(0, 10) >= obtainedDate))
+          if (matches.length === 1) phase = matches[0]
+        }
         const group = groups.find(item => textValue(item.name) === groupName && (!project || String(item.project_id) === String(project.id)))
         const rowErrors = []
         if (!year) rowErrors.push(`年度“${yearName || '空'}”不存在`)
@@ -107,7 +129,6 @@ export default function AdminTeamPoints() {
         if (!phase) rowErrors.push(`阶段“${phaseName || '空'}”不存在或不属于该项目`)
         if (!group) rowErrors.push(`小组“${groupName || '空'}”不存在或不属于该项目`)
         if (!CATEGORIES.includes(category)) rowErrors.push('积分类别不符合模板选项')
-        if (!itemName) rowErrors.push('积分事项不能为空')
         if (!Number.isFinite(points) || points === 0) rowErrors.push('积分值必须为非零数字')
         if (!obtainedDate) rowErrors.push('获得日期格式不正确')
         const remark = textValue(row['备注/调整原因'] ?? row['备注'] ?? row['调整原因'])
@@ -115,7 +136,7 @@ export default function AdminTeamPoints() {
         if (rowErrors.length) errors.push({ row: rowNumber, detail: rowErrors.join('；') })
         else valid.push({
           year_id: Number(year.id), project_id: Number(project.id), phase_id: Number(phase.id), group_id: Number(group.id),
-          category, item_name: itemName, task_key: itemName, points, obtained_date: obtainedDate,
+          category, item_name: itemName, task_key: `${itemName}-${obtainedDate}`, points, obtained_date: obtainedDate,
           data_source: textValue(row['数据来源']) || 'Excel导入', source_note: textValue(row['来源说明']), remark,
           _row: rowNumber, _group_name: groupName, _item_name: itemName,
         })
@@ -131,13 +152,13 @@ export default function AdminTeamPoints() {
     if (!importPreview?.valid.length) return showToast('没有可导入的有效数据', 'error')
     setImporting(true)
     try {
-      const records = importPreview.valid.map(({ _row, _group_name, _item_name, ...record }) => record)
+      const records = importPreview.valid.map(({ _row, _group_name, _item_name, ...record }) => ({ ...record, source_row: _row }))
       const { data } = await api.post('/api/admin/team-points/import', { records })
       const failed = data.errors?.length || 0
       showToast(`成功导入 ${data.created || 0} 条${failed ? `，${failed} 条未导入` : ''}`, failed ? 'error' : 'success')
       setImportPreview(null)
     } catch (error) {
-      showToast(error.response?.data?.detail || '批量导入失败', 'error')
+      showToast(importErrorMessage(error), 'error')
     } finally {
       setImporting(false)
     }
@@ -156,8 +177,8 @@ export default function AdminTeamPoints() {
       <div className="flex items-center justify-between gap-4 mb-5">
         <div className="flex items-center gap-2"><UsersRound className="w-5 h-5 text-indigo-600" /><h2 className="font-semibold">录入小组积分</h2></div>
         <div className="flex items-center gap-2">
-          <button onClick={downloadTemplate} className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-300 text-sm text-gray-700 hover:bg-gray-50"><Download className="w-4 h-4" /> 下载批量导入模板</button>
-          <label className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-emerald-600 text-white text-sm cursor-pointer hover:bg-emerald-700"><Upload className="w-4 h-4" /> Excel批量导入<input type="file" accept=".xlsx,.xls" onChange={readImportFile} className="hidden" /></label>
+          <button onClick={downloadTemplate} className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-300 text-sm text-gray-700 hover:bg-gray-50"><Download className="w-4 h-4" /> 下载小组积分录入模板</button>
+          <label className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-emerald-600 text-white text-sm cursor-pointer hover:bg-emerald-700"><Upload className="w-4 h-4" /> 小组积分录入<input type="file" accept=".xlsx,.xls" onChange={readImportFile} className="hidden" /></label>
         </div>
       </div>
       <div className="mb-4 rounded-lg border border-indigo-100 bg-indigo-50 px-4 py-3 text-sm text-indigo-700">个人积分和小组积分均为自定义录入：管理员填写多少分，系统就按原值记录，不会再按类别或提交顺序自动改分。</div>

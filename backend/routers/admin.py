@@ -72,7 +72,9 @@ def _compute_student_points(db: Session, student_id: int, year_id: Optional[int]
         period_q = period_q.filter(Point.year_id == year_id)
     if project_id is not None:
         period_q = period_q.filter(Point.project_id == project_id)
-    period_points = db.query(func.coalesce(func.sum(period_q.subquery().c.points), 0)).scalar() if period_q.count() > 0 else 0
+    period_points = period_q.with_entities(
+        func.coalesce(func.sum(Point.points), 0)
+    ).scalar() or 0
 
     # 可用积分 = total_earned - 已消耗(已通过/待发货/待领取/已领取) - 冻结(待审核)
     spent = db.query(func.coalesce(func.sum(Redemption.points_spent), 0)).filter(
@@ -93,6 +95,68 @@ def _compute_student_points(db: Session, student_id: int, year_id: Optional[int]
     available = total_earned - spent - frozen
 
     return period_points, total_earned, max(available, 0)
+
+
+def _compute_students_points_batch(
+    db: Session,
+    student_ids: List[int],
+    year_id: Optional[int] = None,
+    project_id: Optional[int] = None,
+):
+    """Batch-load point balances without one query per student."""
+    ids = sorted({int(student_id) for student_id in student_ids if student_id})
+    if not ids:
+        return {}
+
+    total_rows = db.query(
+        Point.student_id,
+        func.coalesce(func.sum(Point.points), 0).label("points"),
+    ).filter(
+        Point.student_id.in_(ids),
+        Point.status == PointStatus.ACTIVE.value,
+    ).group_by(Point.student_id).all()
+    total_map = {row.student_id: int(row.points or 0) for row in total_rows}
+
+    period_query = db.query(
+        Point.student_id,
+        func.coalesce(func.sum(Point.points), 0).label("points"),
+    ).filter(
+        Point.student_id.in_(ids),
+        Point.status == PointStatus.ACTIVE.value,
+    )
+    if year_id is not None:
+        period_query = period_query.filter(Point.year_id == year_id)
+    if project_id is not None:
+        period_query = period_query.filter(Point.project_id == project_id)
+    period_rows = period_query.group_by(Point.student_id).all()
+    period_map = {row.student_id: int(row.points or 0) for row in period_rows}
+
+    deducted_statuses = [
+        RedemptionStatus.PENDING.value,
+        RedemptionStatus.APPROVED.value,
+        RedemptionStatus.PENDING_SHIP.value,
+        RedemptionStatus.SHIPPED.value,
+        RedemptionStatus.PENDING_PICKUP.value,
+        RedemptionStatus.RECEIVED.value,
+        RedemptionStatus.COMPLETED.value,
+    ]
+    deducted_rows = db.query(
+        Redemption.student_id,
+        func.coalesce(func.sum(Redemption.points_spent), 0).label("points"),
+    ).filter(
+        Redemption.student_id.in_(ids),
+        Redemption.status.in_(deducted_statuses),
+    ).group_by(Redemption.student_id).all()
+    deducted_map = {row.student_id: int(row.points or 0) for row in deducted_rows}
+
+    return {
+        student_id: (
+            period_map.get(student_id, 0),
+            total_map.get(student_id, 0),
+            max(total_map.get(student_id, 0) - deducted_map.get(student_id, 0), 0),
+        )
+        for student_id in ids
+    }
 
 
 def _compute_group_stats(db: Session, group_id: int):
@@ -267,9 +331,13 @@ def dashboard(
         User.role == UserRole.STUDENT.value,
         User.account_status == AccountStatus.ENABLED.value,
     ).all()
-    for s in all_students:
-        _, _, avail = _compute_student_points(db, s.id, curr_year.id if curr_year else None, curr_project.id if curr_project else None)
-        available_points_total += avail
+    student_point_totals = _compute_students_points_batch(
+        db,
+        [student.id for student in all_students],
+        curr_year.id if curr_year else None,
+        curr_project.id if curr_project else None,
+    )
+    available_points_total = sum(values[2] for values in student_point_totals.values())
 
     pending_redemptions = db.query(func.count(Redemption.id)).filter(
         Redemption.status == RedemptionStatus.PENDING.value,
@@ -761,6 +829,9 @@ def create_student(
     if selected_group:
         db.add(GroupMember(group_id=selected_group.id, student_id=user.id))
 
+    if data.project_id:
+        _sync_project_phase_associations(db, data.project_id)
+
     _log_operation(db, current_user.id, "创建学员", "student", user.id, f"创建学员 {data.real_name}({username})")
     db.commit()
     db.refresh(user)
@@ -917,6 +988,9 @@ def update_student(
                     GroupMember.role == "小组长",
                 ).update({GroupMember.role: None}, synchronize_session=False)
             membership.role = new_group_role
+
+    if student.project_id:
+        _sync_project_phase_associations(db, student.project_id)
 
     _log_operation(db, current_user.id, "更新学员", "student", student_id, f"更新学员 {student.real_name}")
     db.commit()
@@ -1624,13 +1698,11 @@ def project_summary(
     participant_ids = [row[0] for row in db.query(ProjectEnrollment.student_id).filter(
         ProjectEnrollment.year_id == year_id, ProjectEnrollment.project_id == project_id,
     ).distinct().all()]
-    personal_points = db.query(func.coalesce(func.sum(Point.points), 0)).filter(
-        Point.year_id == year_id, Point.project_id == project_id,
-        Point.status == PointStatus.ACTIVE.value,
-    ).scalar() or 0
-    available_points = 0
-    for student_id in participant_ids:
-        available_points += _compute_student_points(db, student_id, year_id, project_id)[2]
+    student_point_totals = _compute_students_points_batch(
+        db, participant_ids, year_id, project_id,
+    )
+    personal_points = sum(values[0] for values in student_point_totals.values())
+    available_points = sum(values[2] for values in student_point_totals.values())
     ranking_rows = db.query(
         User.id, User.real_name, Group.name.label("group_name"),
         func.coalesce(func.sum(Point.points), 0).label("period_points"),
@@ -1665,6 +1737,43 @@ def project_summary(
     }
 
 
+def _team_point_payloads_batch(items: List[TeamPoint], db: Session):
+    """Resolve related names once for a page of group point records."""
+    group_ids = {item.group_id for item in items if item.group_id}
+    project_ids = {item.project_id for item in items if item.project_id}
+    phase_ids = {item.phase_id for item in items if item.phase_id}
+    group_names = dict(db.query(Group.id, Group.name).filter(
+        Group.id.in_(group_ids)
+    ).all()) if group_ids else {}
+    project_names = dict(db.query(TrainingProject.id, TrainingProject.name).filter(
+        TrainingProject.id.in_(project_ids)
+    ).all()) if project_ids else {}
+    phase_names = dict(db.query(Phase.id, Phase.name).filter(
+        Phase.id.in_(phase_ids)
+    ).all()) if phase_ids else {}
+    return [{
+        "id": item.id,
+        "record_number": item.record_number,
+        "group_id": item.group_id,
+        "group_name": group_names.get(item.group_id, ""),
+        "year_id": item.year_id,
+        "project_id": item.project_id,
+        "phase_id": item.phase_id,
+        "project_name": project_names.get(item.project_id, ""),
+        "phase_name": phase_names.get(item.phase_id),
+        "points": item.points,
+        "category": item.category,
+        "item_name": item.item_name,
+        "task_key": item.task_key,
+        "obtained_date": item.obtained_date,
+        "data_source": item.data_source,
+        "source_note": item.source_note,
+        "remark": item.remark,
+        "status": item.status,
+        "created_at": item.created_at,
+    } for item in items]
+
+
 @router.get("/team-points")
 def list_team_points(
     project_id: Optional[int] = Query(None), phase_id: Optional[int] = Query(None),
@@ -1678,7 +1787,7 @@ def list_team_points(
     if group_id: q = q.filter(TeamPoint.group_id == group_id)
     total = q.count()
     items = q.order_by(TeamPoint.obtained_date.desc(), TeamPoint.id.desc()).offset((page - 1) * page_size).limit(page_size).all()
-    return {"items": [_team_point_payload(item, db) for item in items], "total": total, "page": page, "page_size": page_size, "total_pages": math.ceil(total / page_size) if total else 1}
+    return {"items": _team_point_payloads_batch(items, db), "total": total, "page": page, "page_size": page_size, "total_pages": math.ceil(total / page_size) if total else 1}
 
 
 def _insert_team_point(db: Session, data: dict, admin_id: int):
@@ -1705,6 +1814,15 @@ def _insert_team_point(db: Session, data: dict, admin_id: int):
     db.add(item); db.flush(); return item
 
 
+def _import_error_detail(error: Exception) -> str:
+    """Return a compact database error without leaking connection details."""
+    original = getattr(error, "orig", None)
+    message = str(original or error).replace("\n", " ").strip()
+    if not message:
+        message = error.__class__.__name__
+    return message[:300]
+
+
 @router.post("/team-points")
 def create_team_point(data: dict = Body(...), current_user: User = Depends(require_admin), db: Session = Depends(get_db)):
     try: item = _insert_team_point(db, data, current_user.id)
@@ -1715,11 +1833,25 @@ def create_team_point(data: dict = Body(...), current_user: User = Depends(requi
 
 @router.post("/team-points/import")
 def import_team_points(data: dict = Body(...), current_user: User = Depends(require_admin), db: Session = Depends(get_db)):
-    created, errors = 0, []
-    for index, record in enumerate(data.get("records") or []):
-        try: _insert_team_point(db, record, current_user.id); created += 1
-        except Exception as error: errors.append({"row": index + 2, "detail": str(error)})
-    db.commit(); return {"created": created, "errors": errors}
+    records = data.get("records") or []
+    if not records:
+        raise HTTPException(status_code=400, detail="导入数据为空")
+    created = 0
+    try:
+        for index, record in enumerate(records):
+            source_row = int(record.get("source_row") or index + 2)
+            try:
+                _insert_team_point(db, record, current_user.id)
+                created += 1
+            except Exception as error:
+                raise ValueError(f"Excel 第 {source_row} 行写入失败：{_import_error_detail(error)}") from error
+        _log_operation(db, current_user.id, "Excel导入小组积分", "team_point", None, f"导入 {created} 条小组积分")
+        db.commit()
+    except Exception as error:
+        db.rollback()
+        detail = str(error) if isinstance(error, ValueError) else f"小组积分批量导入失败：{_import_error_detail(error)}"
+        raise HTTPException(status_code=400, detail=detail) from error
+    return {"created": created, "errors": []}
 
 
 @router.post("/team-points/delete-all")
@@ -1880,6 +2012,7 @@ def create_group(
     )
     db.add(group)
     db.flush()
+    _sync_project_phase_associations(db, data.project_id)
     _log_operation(db, current_user.id, "创建小组", "group", group.id, f"创建小组 {data.name}")
     db.commit()
     db.refresh(group)
@@ -2279,11 +2412,6 @@ def list_phases(
         q = q.filter(Phase.project_id == project_id)
 
     phases = q.order_by(Phase.id.desc()).all()
-    associations_changed = False
-    for pid in {p.project_id for p in phases}:
-        associations_changed = _sync_project_phase_associations(db, pid) or associations_changed
-    if associations_changed:
-        db.commit()
     result = []
     for p in phases:
         participant_count = db.query(func.count(func.distinct(PhaseParticipant.student_id))).filter(
@@ -2493,10 +2621,10 @@ def get_phase_detail(
             })
 
     # 个人排名
-    rankings = _phase_personal_ranking(db, phase_id)
+    rankings = _phase_personal_ranking_batch(db, phase_id)
 
     # 小组排名
-    group_rankings = _phase_group_ranking(db, phase_id)
+    group_rankings = _phase_group_ranking_batch(db, phase_id)
 
     # 优秀成员
     excellent = db.query(PhaseParticipant).filter(
@@ -2599,6 +2727,124 @@ def _phase_group_ranking(db: Session, phase_id: int) -> List[dict]:
     return rankings
 
 
+def _phase_personal_ranking_batch(db: Session, phase_id: int) -> List[dict]:
+    """Build a phase leaderboard with a fixed number of database queries."""
+    rankings = db.query(
+        Point.student_id,
+        func.sum(Point.points).label("total"),
+    ).filter(
+        Point.phase_id == phase_id,
+        Point.status == PointStatus.ACTIVE.value,
+    ).group_by(Point.student_id).all()
+    student_ids = [row.student_id for row in rankings]
+    if not student_ids:
+        return []
+
+    students = {
+        student.id: student
+        for student in db.query(User).filter(User.id.in_(student_ids)).all()
+    }
+    category_map = {student_id: [] for student_id in student_ids}
+    category_rows = db.query(
+        Point.student_id,
+        Point.category,
+        func.sum(Point.points).label("points"),
+    ).filter(
+        Point.student_id.in_(student_ids),
+        Point.phase_id == phase_id,
+        Point.status == PointStatus.ACTIVE.value,
+    ).group_by(Point.student_id, Point.category).all()
+    for row in category_rows:
+        category_map[row.student_id].append({
+            "category": row.category,
+            "points": int(row.points or 0),
+        })
+
+    group_name_map = {}
+    group_rows = db.query(
+        GroupMember.student_id, Group.name,
+    ).join(Group, Group.id == GroupMember.group_id).filter(
+        GroupMember.student_id.in_(student_ids),
+    ).order_by(GroupMember.id).all()
+    for row in group_rows:
+        group_name_map.setdefault(row.student_id, row.name)
+
+    result = []
+    sorted_rows = sorted(rankings, key=lambda row: row.total or 0, reverse=True)
+    for index, row in enumerate(sorted_rows):
+        student = students.get(row.student_id)
+        if not student:
+            continue
+        result.append({
+            "rank": index + 1,
+            "student_id": row.student_id,
+            "student_name": student.real_name,
+            "group_name": group_name_map.get(row.student_id),
+            "department": student.department,
+            "total_points": int(row.total or 0),
+            "category_details": category_map.get(row.student_id, []),
+        })
+    return result
+
+
+def _phase_group_ranking_batch(db: Session, phase_id: int) -> List[dict]:
+    """Build a phase group leaderboard without per-group round trips."""
+    group_rows = db.query(Group.id, Group.name).join(
+        PhaseGroup, PhaseGroup.group_id == Group.id,
+    ).filter(PhaseGroup.phase_id == phase_id).order_by(PhaseGroup.id).all()
+    group_ids = [row.id for row in group_rows]
+    if not group_ids:
+        return []
+
+    member_counts = dict(db.query(
+        GroupMember.group_id,
+        func.count(func.distinct(GroupMember.student_id)),
+    ).filter(
+        GroupMember.group_id.in_(group_ids),
+    ).group_by(GroupMember.group_id).all())
+    personal_totals = dict(db.query(
+        GroupMember.group_id,
+        func.coalesce(func.sum(Point.points), 0),
+    ).join(
+        Point, Point.student_id == GroupMember.student_id,
+    ).filter(
+        GroupMember.group_id.in_(group_ids),
+        Point.phase_id == phase_id,
+        Point.status == PointStatus.ACTIVE.value,
+    ).group_by(GroupMember.group_id).all())
+    team_totals = dict(db.query(
+        TeamPoint.group_id,
+        func.coalesce(func.sum(TeamPoint.points), 0),
+    ).filter(
+        TeamPoint.group_id.in_(group_ids),
+        TeamPoint.phase_id == phase_id,
+        TeamPoint.status == PointStatus.ACTIVE.value,
+    ).group_by(TeamPoint.group_id).all())
+
+    rankings = []
+    for group in group_rows:
+        member_count = int(member_counts.get(group.id, 0) or 0)
+        if not member_count:
+            continue
+        personal_points = int(personal_totals.get(group.id, 0) or 0)
+        team_points = int(team_totals.get(group.id, 0) or 0)
+        final_score = personal_points + team_points
+        rankings.append({
+            "group_id": group.id,
+            "group_name": group.name,
+            "personal_points": personal_points,
+            "team_points": team_points,
+            "total_points": final_score,
+            "final_score": final_score,
+            "avg_points": round(final_score / member_count, 2),
+            "member_count": member_count,
+        })
+    rankings.sort(key=lambda row: row["final_score"], reverse=True)
+    for index, row in enumerate(rankings):
+        row["rank"] = index + 1
+    return rankings
+
+
 @router.put("/phases/{phase_id}/close")
 def close_phase(
     phase_id: int,
@@ -2661,7 +2907,7 @@ def phase_ranking(
     if not phase:
         raise HTTPException(status_code=404, detail="阶段不存在")
 
-    rankings_data = _phase_personal_ranking(db, phase_id)
+    rankings_data = _phase_personal_ranking_batch(db, phase_id)
     return [PhaseRanking(**r) for r in rankings_data]
 
 
@@ -2675,7 +2921,7 @@ def phase_group_ranking(
     if not phase:
         raise HTTPException(status_code=404, detail="阶段不存在")
 
-    rankings_data = _phase_group_ranking(db, phase_id)
+    rankings_data = _phase_group_ranking_batch(db, phase_id)
     return [GroupRanking(**r) for r in rankings_data]
 
 
@@ -2883,11 +3129,26 @@ def import_points(
     seen_numbers = set()
     valid_records = []
 
-    for rec in records:
+    for fallback_row, rec in enumerate(records, start=5):
+        source_row = rec.source_row or fallback_row
         student = db.query(User).filter(User.id == rec.student_id).first()
         if not student:
             unmatched_count += 1
-            errors.append(f"学员 ID {rec.student_id} 不存在")
+            errors.append(f"Excel 第 {source_row} 行：学员 ID {rec.student_id} 不存在")
+            continue
+
+        enrollment = db.query(ProjectEnrollment).filter(
+            ProjectEnrollment.student_id == rec.student_id,
+            ProjectEnrollment.year_id == rec.year_id,
+            ProjectEnrollment.project_id == rec.project_id,
+        ).first()
+        if not enrollment:
+            unmatched_count += 1
+            errors.append(f"Excel 第 {source_row} 行：该学员不属于所选年度和项目")
+            continue
+        if rec.group_id and enrollment.group_id and rec.group_id != enrollment.group_id:
+            unmatched_count += 1
+            errors.append(f"Excel 第 {source_row} 行：填写小组与该学员在项目中的所属小组不一致")
             continue
 
         if rec.record_number:
@@ -2898,16 +3159,16 @@ def import_points(
 
         if rec.phase_id:
             phase = db.query(Phase).filter(Phase.id == rec.phase_id).first()
-            if not phase:
+            if not phase or phase.project_id != rec.project_id:
                 invalid_phase += 1
-                errors.append(f"阶段 ID {rec.phase_id} 不存在")
+                errors.append(f"Excel 第 {source_row} 行：阶段不存在或不属于所选项目")
                 continue
 
         valid_count += 1
         new_count += 1
         total_points += rec.points
         student_set.add(rec.student_id)
-        valid_records.append(rec)
+        valid_records.append((source_row, rec))
 
     preview = PointImportPreview(
         valid_count=valid_count,
@@ -2922,37 +3183,49 @@ def import_points(
 
     # 实际导入
     imported = 0
-    for rec in valid_records:
-        record = Point(
-            record_number=rec.record_number,
-            student_id=rec.student_id,
-            admin_id=current_user.id,
-            year_id=rec.year_id,
-            project_id=rec.project_id,
-            phase_id=rec.phase_id,
-            group_id=rec.group_id,
-            points=rec.points,
-            category=rec.category,
-            description=rec.description,
-            data_source=PointDataSource.EXCEL.value,
-            status=PointStatus.ACTIVE.value,
-            obtained_date=rec.obtained_date or datetime.now(timezone.utc),
-        )
-        db.add(record)
+    try:
+        for source_row, rec in valid_records:
+            try:
+                record = Point(
+                    record_number=rec.record_number,
+                    student_id=rec.student_id,
+                    admin_id=current_user.id,
+                    year_id=rec.year_id,
+                    project_id=rec.project_id,
+                    phase_id=rec.phase_id,
+                    group_id=rec.group_id,
+                    points=rec.points,
+                    category=rec.category,
+                    description=rec.description,
+                    data_source=PointDataSource.EXCEL.value,
+                    status=PointStatus.ACTIVE.value,
+                    obtained_date=rec.obtained_date or datetime.now(timezone.utc),
+                )
+                db.add(record)
 
-        if rec.phase_id:
-            existing_pp = db.query(PhaseParticipant).filter(
-                PhaseParticipant.phase_id == rec.phase_id,
-                PhaseParticipant.student_id == rec.student_id,
-            ).first()
-            if not existing_pp:
-                pp = PhaseParticipant(phase_id=rec.phase_id, student_id=rec.student_id, group_id=rec.group_id)
-                db.add(pp)
+                if rec.phase_id:
+                    existing_pp = db.query(PhaseParticipant).filter(
+                        PhaseParticipant.phase_id == rec.phase_id,
+                        PhaseParticipant.student_id == rec.student_id,
+                    ).first()
+                    if not existing_pp:
+                        db.add(PhaseParticipant(
+                            phase_id=rec.phase_id,
+                            student_id=rec.student_id,
+                            group_id=rec.group_id,
+                        ))
+                db.flush()
+                imported += 1
+            except Exception as error:
+                raise ValueError(f"Excel 第 {source_row} 行写入失败：{_import_error_detail(error)}") from error
 
-        imported += 1
-
-    _log_operation(db, current_user.id, "Excel导入积分", "point", None, f"导入 {imported} 条积分")
-    db.commit()
+        if imported:
+            _log_operation(db, current_user.id, "Excel导入积分", "point", None, f"导入 {imported} 条积分")
+        db.commit()
+    except Exception as error:
+        db.rollback()
+        detail = str(error) if isinstance(error, ValueError) else f"个人积分批量导入失败：{_import_error_detail(error)}"
+        raise HTTPException(status_code=400, detail=detail) from error
     return {"message": f"成功导入 {imported} 条积分记录", "preview": preview.model_dump()}
 
 
@@ -3121,23 +3394,44 @@ def list_point_records(
     total = q.count()
     records = q.order_by(Point.id.desc()).offset((page - 1) * page_size).limit(page_size).all()
 
+    user_ids = {
+        user_id
+        for record in records
+        for user_id in (record.student_id, record.admin_id)
+        if user_id
+    }
+    user_names = dict(db.query(User.id, User.real_name).filter(
+        User.id.in_(user_ids)
+    ).all()) if user_ids else {}
+    phase_ids = {record.phase_id for record in records if record.phase_id}
+    group_ids = {record.group_id for record in records if record.group_id}
+    year_ids = {record.year_id for record in records if record.year_id}
+    project_ids = {record.project_id for record in records if record.project_id}
+    phase_names = dict(db.query(Phase.id, Phase.name).filter(
+        Phase.id.in_(phase_ids)
+    ).all()) if phase_ids else {}
+    group_names = dict(db.query(Group.id, Group.name).filter(
+        Group.id.in_(group_ids)
+    ).all()) if group_ids else {}
+    year_names = dict(db.query(AcademicYear.id, AcademicYear.name).filter(
+        AcademicYear.id.in_(year_ids)
+    ).all()) if year_ids else {}
+    project_names = dict(db.query(TrainingProject.id, TrainingProject.name).filter(
+        TrainingProject.id.in_(project_ids)
+    ).all()) if project_ids else {}
+
     items = []
     for r in records:
-        student = db.query(User).filter(User.id == r.student_id).first()
-        admin = db.query(User).filter(User.id == r.admin_id).first()
-        phase_name = db.query(Phase.name).filter(Phase.id == r.phase_id).scalar() if r.phase_id else None
-        group_name = db.query(Group.name).filter(Group.id == r.group_id).scalar() if r.group_id else None
-        year_name = db.query(AcademicYear.name).filter(AcademicYear.id == r.year_id).scalar() or ""
-        project_name = db.query(TrainingProject.name).filter(TrainingProject.id == r.project_id).scalar() or ""
-
         items.append(PointRecordOut(
             id=r.id, record_number=r.record_number,
             student_id=r.student_id,
-            student_name=student.real_name if student else "",
-            admin_name=admin.real_name if admin else "",
+            student_name=user_names.get(r.student_id, ""),
+            admin_name=user_names.get(r.admin_id, ""),
             points=r.points,
-            year_name=year_name, project_name=project_name,
-            phase_name=phase_name, group_name=group_name,
+            year_name=year_names.get(r.year_id, ""),
+            project_name=project_names.get(r.project_id, ""),
+            phase_name=phase_names.get(r.phase_id),
+            group_name=group_names.get(r.group_id),
             category=r.category, description=r.description,
             data_source=r.data_source, status=r.status,
             revoke_reason=r.revoke_reason,
@@ -3284,6 +3578,47 @@ def upload_rule_text(
     return {"message": "规则文本已上传", "id": rt.id}
 
 
+@router.put("/rule-text")
+def save_rule_text(
+    data: dict = Body(...),
+    current_user=Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Save the single rich-text rule document shown to students."""
+    title = str(data.get("title") or "积分规则说明").strip()[:200]
+    content = str(data.get("content") or "").strip()
+    if not content:
+        raise HTTPException(status_code=400, detail="规则内容不能为空")
+    if len(content.encode("utf-8")) > 3 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="规则内容过大，请压缩图片后再保存")
+
+    # The browser sanitizes before save and render. Reject executable markup here too.
+    lowered = content.lower()
+    blocked_fragments = ("<script", "javascript:", "<iframe", "<object", "<embed")
+    if any(fragment in lowered for fragment in blocked_fragments):
+        raise HTTPException(status_code=400, detail="规则内容包含不安全代码")
+
+    rule_text = db.query(RuleText).order_by(RuleText.id.desc()).first()
+    if rule_text:
+        rule_text.title = title
+        rule_text.content = content
+    else:
+        rule_text = RuleText(title=title, content=content)
+        db.add(rule_text)
+
+    db.flush()
+    _log_operation(db, current_user.id, "更新积分规则文本", "rule_text", rule_text.id, f"更新: {title}")
+    db.commit()
+    db.refresh(rule_text)
+    return {
+        "message": "积分规则已保存并同步到学员端",
+        "id": rule_text.id,
+        "title": rule_text.title,
+        "content": rule_text.content,
+        "updated_at": rule_text.updated_at.isoformat() if rule_text.updated_at else None,
+    }
+
+
 @router.delete("/rule-text/{rt_id}")
 def delete_rule_text(rt_id: int, current_user=Depends(require_admin), db: Session = Depends(get_db)):
     rt = db.query(RuleText).filter(RuleText.id == rt_id).first()
@@ -3344,6 +3679,8 @@ def create_product(
     current_user: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
+    if data.on_sale_time and data.off_sale_time and data.off_sale_time.timestamp() <= data.on_sale_time.timestamp():
+        raise HTTPException(status_code=400, detail="下架时间必须晚于上架时间")
     product = Product(
         name=data.name,
         description=data.description,
@@ -3387,6 +3724,8 @@ def update_product(
             raise HTTPException(status_code=400, detail="库存不足，无法上架")
     for key, val in updates.items():
         setattr(product, key, val)
+    if product.on_sale_time and product.off_sale_time and product.off_sale_time.timestamp() <= product.on_sale_time.timestamp():
+        raise HTTPException(status_code=400, detail="下架时间必须晚于上架时间")
 
     _log_operation(db, current_user.id, "更新商品", "product", product_id, f"更新��品 {product.name}")
     db.commit()

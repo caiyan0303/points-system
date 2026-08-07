@@ -25,3 +25,20 @@ body { margin: 0; min-width: 320px; min-height: 100vh; }
 .hover-lift:hover { transform: translateY(-4px); box-shadow: 0 24px 65px rgba(67,56,202,.16); }
 @keyframes float-aurora { 0%,100% { transform: translate3d(0,0,0) scale(1); } 50% { transform: translate3d(0,-18px,0) scale(1.06); } }
 @keyframes wave { 0%,100% { transform: rotate(0deg); } 20% { transform: rotate(12deg); } 40% { transform: rotate(-6deg); } 60% { transform: rotate(10deg); } 80% { transform: rotate(-3deg); } }
+
+.rule-editor:empty::before { content: attr(data-placeholder); color: #94a3b8; pointer-events: none; }
+.rule-content { color: #334155; font-size: 15px; line-height: 1.85; overflow-wrap: anywhere; }
+.rule-content h1, .rule-content h2, .rule-content h3, .rule-content h4 { color: #0f172a; font-weight: 800; line-height: 1.35; margin: 1.4em 0 .65em; }
+.rule-content h1 { font-size: 2rem; } .rule-content h2 { font-size: 1.55rem; } .rule-content h3 { font-size: 1.22rem; } .rule-content h4 { font-size: 1.05rem; }
+.rule-content p { margin: .65em 0; }
+.rule-content ul, .rule-content ol { margin: .7em 0; padding-left: 1.65rem; }
+.rule-content ul { list-style: disc; } .rule-content ol { list-style: decimal; }
+.rule-content li { margin: .3em 0; }
+.rule-content blockquote { margin: 1rem 0; border-left: 4px solid #818cf8; border-radius: 0 12px 12px 0; background: #eef2ff; padding: .8rem 1rem; color: #4338ca; }
+.rule-content table { width: 100%; margin: 1.25rem 0; border-collapse: collapse; overflow: hidden; border-radius: 12px; }
+.rule-content th, .rule-content td { min-width: 90px; border: 1px solid #dbeafe; padding: .7rem .8rem; text-align: left; vertical-align: top; }
+.rule-content th { background: #eef2ff; color: #3730a3; font-weight: 800; }
+.rule-content tr:nth-child(even) td { background: #f8fafc; }
+.rule-content img { display: block; max-width: 100%; height: auto; margin: 1.25rem auto; border-radius: 16px; box-shadow: 0 12px 35px rgba(79, 70, 229, .12); }
+.rule-content a { color: #4f46e5; text-decoration: underline; }
+.rule-content hr { margin: 1.6rem 0; border: 0; border-top: 1px solid #e2e8f0; }

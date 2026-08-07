@@ -19,25 +19,36 @@ export default function StudentDashboard() {
   const [error, setError] = useState('')
 
   useEffect(() => {
-    Promise.all([
-      api.get('/api/student/dashboard'),
-      api.get('/api/student/phase-overview'),
-      api.get('/api/student/team'),
-      api.get('/api/common/projects'),
-    ]).then(([dashboardRes, phaseRes, teamRes, projectRes]) => {
-      const nextPhases = phaseRes.data?.phases || []
+    let active = true
+    const dashboardRequest = api.get('/api/student/dashboard')
+    const phaseRequest = api.get('/api/student/phase-overview')
+    const teamRequest = api.get('/api/student/team')
+
+    // 核心积分返回后立即展示首页；排行榜和小组数据继续在后台加载。
+    dashboardRequest.then((dashboardRes) => {
+      if (!active) return
       setData(dashboardRes.data)
+      setCurrentProjectId(dashboardRes.data?.project_id || null)
       setRankingTab(rewardPolicyFor(dashboardRes.data?.project_name).phaseAwardType === 'group' ? 'team' : 'personal')
+    }).catch((err) => {
+      if (active) setError(err.response?.data?.detail || '积分驾驶舱加载失败')
+    }).finally(() => {
+      if (active) setLoading(false)
+    })
+
+    Promise.all([dashboardRequest, phaseRequest, teamRequest]).then(([, phaseRes, teamRes]) => {
+      if (!active) return
+      const nextPhases = phaseRes.data?.phases || []
       setPhases(nextPhases)
       setTeamData(teamRes.data)
-      const projectItems = projectRes.data?.items || projectRes.data || []
-      const selectedProject = projectItems.find((item) => item.name === dashboardRes.data?.project_name)
-      setCurrentProjectId(selectedProject?.id || null)
       const current = nextPhases.find((item) => ['进行中', 'in_progress'].includes(item.status)) || nextPhases[0]
       if (current?.phase_id) {
         setSelectedPhaseId(String(current.phase_id))
       }
-    }).catch((err) => setError(err.response?.data?.detail || '积分驾驶舱加载失败')).finally(() => setLoading(false))
+    }).catch(() => {
+      // 附加排行榜加载失败时保留已完成的个人积分首页。
+    })
+    return () => { active = false }
   }, [])
 
   useEffect(() => {

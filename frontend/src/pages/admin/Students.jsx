@@ -11,8 +11,8 @@ import {
 } from 'lucide-react'
 import * as XLSX from 'xlsx'
 const CATEGORIES = [
-  '线上学习', '学习输出', '问卷及测评反馈', '线下出勤',
-  '课堂互动', '结营任务', '小组长职责', '特殊调整'
+  '问卷及测评反馈', '个人全勤', '考核优秀奖励', '学习输出',
+  '课堂互动', '特殊调整'
 ]
 
 export default function AdminStudents() {
@@ -38,7 +38,7 @@ export default function AdminStudents() {
   // Modal states
   const [pointModal, setPointModal] = useState(null) // single
   const [batchPointModal, setBatchPointModal] = useState(false)
-  const [batchPointForm, setBatchPointForm] = useState({ points: '', category: '线上学习', description: '', phase_id: '' })
+  const [batchPointForm, setBatchPointForm] = useState({ points: '', category: '问卷及测评反馈', description: '', phase_id: '' })
   const [createModal, setCreateModal] = useState(false)
   const [editModal, setEditModal] = useState(null)
   const [viewModal, setViewModal] = useState(null)
@@ -52,7 +52,7 @@ export default function AdminStudents() {
   const [isImporting, setIsImporting] = useState(false)
   const fileInputRef = useRef(null)
 
-  const [pointForm, setPointForm] = useState({ points: '', category: '线上学习', description: '', phase_id: '' })
+  const [pointForm, setPointForm] = useState({ points: '', category: '问卷及测评反馈', description: '', phase_id: '' })
   const [createForm, setCreateForm] = useState({ real_name: '', department: '', system: '', level1_dept: '', position: '', year_id: '', project_id: '', group_id: '', group_name: '' })
   const [editForm, setEditForm] = useState({ real_name: '', department: '', system: '', level1_dept: '', position: '', year_id: '', project_id: '', group_id: '', group_name: '', group_role: '', employment_status: '在职', account_status: '启用' })
 
@@ -120,7 +120,7 @@ export default function AdminStudents() {
         phase_id: pointForm.phase_id ? parseInt(pointForm.phase_id) : null,
       })
       showToast(`已添加 ${pointForm.points} 积分`)
-      setPointModal(null); setPointForm({ points: '', category: '线上学习', description: '', phase_id: '' })
+      setPointModal(null); setPointForm({ points: '', category: '问卷及测评反馈', description: '', phase_id: '' })
       fetchStudents()
     } catch (err) { showToast(err.response?.data?.detail || '操作失败', 'error') }
   }
@@ -139,7 +139,7 @@ export default function AdminStudents() {
       }))
       await api.post('/api/admin/points/batch', { records })
       showToast(`已为 ${records.length} 名学员${pts > 0 ? '添加' : '扣减'} ${Math.abs(pts)} 积分`)
-      setBatchPointModal(false); setBatchPointForm({ points: '', category: '线上学习', description: '', phase_id: '' })
+      setBatchPointModal(false); setBatchPointForm({ points: '', category: '问卷及测评反馈', description: '', phase_id: '' })
       setSelectedIds(new Set()); fetchStudents()
     } catch (err) { showToast(err.response?.data?.detail || '操作失败', 'error') }
   }

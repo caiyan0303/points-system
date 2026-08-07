@@ -1,38 +1,39 @@
+import { lazy, Suspense } from 'react'
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { AdminScopeProvider } from './contexts/AdminScopeContext'
 import ErrorBoundary from './components/ErrorBoundary'
 
 // Pages
-import LoginPage from './pages/LoginPage'
+const LoginPage = lazy(() => import('./pages/LoginPage'))
 
 // Student Pages
-import StudentDashboard from './pages/student/Dashboard'
-import StudentProjects from './pages/student/Projects'
-import StudentProjectWorkspace from './pages/student/ProjectWorkspace'
-import StudentShop from './pages/student/Shop'
-import StudentRedemptions from './pages/student/Redemptions'
-import StudentHistory from './pages/student/History'
-import StudentProfile from './pages/student/Profile'
-import StudentRuleText from './pages/student/RuleText'
-import StudentRankings from './pages/student/Rankings'
+const StudentDashboard = lazy(() => import('./pages/student/Dashboard'))
+const StudentProjects = lazy(() => import('./pages/student/Projects'))
+const StudentProjectWorkspace = lazy(() => import('./pages/student/ProjectWorkspace'))
+const StudentShop = lazy(() => import('./pages/student/Shop'))
+const StudentRedemptions = lazy(() => import('./pages/student/Redemptions'))
+const StudentHistory = lazy(() => import('./pages/student/History'))
+const StudentProfile = lazy(() => import('./pages/student/Profile'))
+const StudentRuleText = lazy(() => import('./pages/student/RuleText'))
+const StudentRankings = lazy(() => import('./pages/student/Rankings'))
 
 // Admin Pages
-import AdminDashboard from './pages/admin/Dashboard'
-import AdminStudents from './pages/admin/Students'
-import AdminGroups from './pages/admin/Groups'
-import AdminPhases from './pages/admin/Phases'
-import AdminPointsAdd from './pages/admin/PointsAdd'
-import AdminPointsRecords from './pages/admin/PointsRecords'
-import AdminPointsSummary from './pages/admin/PointsSummary'
-import AdminTeamPoints from './pages/admin/TeamPoints'
-import AdminTeamPointsRecords from './pages/admin/TeamPointsRecords'
-import AdminPointRules from './pages/admin/PointRules'
-import AdminProducts from './pages/admin/Products'
-import AdminRedemptions from './pages/admin/Redemptions'
-import AdminYearly from './pages/admin/Yearly'
-import AdminOperationLogs from './pages/admin/OperationLogs'
-import AdminProjects from './pages/admin/ProjectsManage'
+const AdminDashboard = lazy(() => import('./pages/admin/Dashboard'))
+const AdminStudents = lazy(() => import('./pages/admin/Students'))
+const AdminGroups = lazy(() => import('./pages/admin/Groups'))
+const AdminPhases = lazy(() => import('./pages/admin/Phases'))
+const AdminPointsAdd = lazy(() => import('./pages/admin/PointsAdd'))
+const AdminPointsRecords = lazy(() => import('./pages/admin/PointsRecords'))
+const AdminPointsSummary = lazy(() => import('./pages/admin/PointsSummary'))
+const AdminTeamPoints = lazy(() => import('./pages/admin/TeamPoints'))
+const AdminTeamPointsRecords = lazy(() => import('./pages/admin/TeamPointsRecords'))
+const AdminPointRules = lazy(() => import('./pages/admin/PointRules'))
+const AdminProducts = lazy(() => import('./pages/admin/Products'))
+const AdminRedemptions = lazy(() => import('./pages/admin/Redemptions'))
+const AdminYearly = lazy(() => import('./pages/admin/Yearly'))
+const AdminOperationLogs = lazy(() => import('./pages/admin/OperationLogs'))
+const AdminProjects = lazy(() => import('./pages/admin/ProjectsManage'))
 
 const W = (C) => <ErrorBoundary><C /></ErrorBoundary>
 
@@ -96,7 +97,9 @@ export default function App() {
     <HashRouter>
       <AuthProvider>
         <AdminScopeProvider>
-          <AppRoutes />
+          <Suspense fallback={<div className="flex min-h-screen items-center justify-center bg-slate-50 text-sm font-bold text-indigo-600">页面加载中…</div>}>
+            <AppRoutes />
+          </Suspense>
         </AdminScopeProvider>
       </AuthProvider>
     </HashRouter>

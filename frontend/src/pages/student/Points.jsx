@@ -5,7 +5,7 @@ import AppLayout from '../../components/AppLayout'
 import Pagination from '../../components/Pagination'
 import { CalendarDays, Medal, Sparkles, TrendingUp, Users } from 'lucide-react'
 
-const CATEGORIES = ['线上学习', '学习输出', '问卷及测评反馈', '线下出勤', '课堂互动', '结营任务', '小组长职责', '特殊调整']
+const CATEGORIES = ['问卷及测评反馈', '个人全勤', '考核优秀奖励', '学习输出', '课堂互动', '特殊调整']
 const dateText = (value) => value ? new Date(value).toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' }) : '-'
 
 export default function StudentPoints() {

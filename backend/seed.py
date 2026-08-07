@@ -134,15 +134,18 @@ def seed():
 
     # ═══ 积分规则 ═══
     rules = [
-        PointRule(category="线上课程", rule_name="线上课程完成", default_points=10, max_points=15, allow_repeat=1, count_in_period=1, count_in_available=1),
-        PointRule(category="线上考试", rule_name="线上考试通过", default_points=12, max_points=20, allow_repeat=1, count_in_period=1, count_in_available=1),
-        PointRule(category="学习输出", rule_name="学习报告/心得", default_points=8, max_points=15, allow_repeat=1, count_in_period=1, count_in_available=1),
-        PointRule(category="线下出勤", rule_name="线下课出勤", default_points=2, max_points=12, allow_repeat=1, count_in_period=1, count_in_available=1, description="每出勤一次获得2分，单阶段上限12分"),
-        PointRule(category="课堂任务", rule_name="课堂任务完成", default_points=10, max_points=20, allow_repeat=1, count_in_period=1, count_in_available=1),
-        PointRule(category="实践任务", rule_name="实践任务完成", default_points=15, max_points=30, allow_repeat=1, count_in_period=1, count_in_available=1),
-        PointRule(category="小组共创", rule_name="小组共创成果", default_points=20, max_points=40, allow_repeat=1, count_in_period=1, count_in_available=1),
-        PointRule(category="项目贡献", rule_name="项目特殊贡献", default_points=25, max_points=50, allow_repeat=0, count_in_period=1, count_in_available=1),
-        PointRule(category="特殊调整", rule_name="管理员特殊调整", default_points=0, max_points=100, count_in_period=1, count_in_available=1, need_approval=1),
+        PointRule(category="问卷及测评反馈", rule_name="按时提交问卷及测评反馈", default_points=6, max_points=6, allow_repeat=1, count_in_period=1, count_in_available=1),
+        PointRule(category="个人全勤", rule_name="线下课程个人全勤", default_points=10, max_points=10, allow_repeat=0, count_in_period=1, count_in_available=1),
+        PointRule(category="考核优秀奖励", rule_name="单门课程考核达到90分及以上", default_points=3, max_points=3, allow_repeat=1, count_in_period=1, count_in_available=1),
+        PointRule(category="学习输出", rule_name="课程学习输出", default_points=6, max_points=15, allow_repeat=1, count_in_period=1, count_in_available=1),
+        PointRule(category="课堂互动", rule_name="有效回答课堂随机提问", default_points=3, max_points=None, allow_repeat=1, count_in_period=1, count_in_available=1),
+        PointRule(category="小组出勤", rule_name="小组全员出勤", default_points=6, max_points=6, allow_repeat=1, count_in_period=1, count_in_available=0),
+        PointRule(category="线上学习任务", rule_name="小组完成线上学习任务", default_points=10, max_points=10, allow_repeat=1, count_in_period=1, count_in_available=0),
+        PointRule(category="线上案例任务", rule_name="小组线上案例任务", default_points=6, max_points=10, allow_repeat=1, count_in_period=1, count_in_available=0),
+        PointRule(category="阶段案例评优", rule_name="阶段案例第一名", default_points=20, max_points=20, allow_repeat=1, count_in_period=1, count_in_available=0),
+        PointRule(category="沙盘共创", rule_name="沙盘活动最终排名", default_points=10, max_points=50, allow_repeat=1, count_in_period=1, count_in_available=0),
+        PointRule(category="结营作业", rule_name="个人结营作业及小组任务", default_points=6, max_points=10, allow_repeat=0, count_in_period=1, count_in_available=0),
+        PointRule(category="特殊调整", rule_name="管理员积分纠错", default_points=0, max_points=None, allow_repeat=1, count_in_period=1, count_in_available=1, need_approval=1),
     ]
     for r in rules:
         db.add(r)
